@@ -311,7 +311,7 @@ const COL = {movs:'movimientos', plant:'recurrentes', cfg:'config/app'};
 let vistaGuardada = 'monto'; try { vistaGuardada = localStorage.getItem('vistaAn') || 'monto'; } catch(e){}
 const S = {vistaAn: vistaGuardada,
   movs: [], plant: [], plan: {}, hist: {}, cfg: CFG0(), cfgExiste: false,
-  ready: {movs:false, plant:false, cfg:false},
+  ready: {movs:false, plant:false, cfg:false, plan:false, hist:false},
   db: null, dl: null, offline: false,
   mes: null, view: 'inicio', filtro: 'todo', q: '', anio: 'todos',
 };
@@ -426,6 +426,26 @@ function itemsDelMes(mk){
   return out;
 }
 const bhuPesos = () => 0; // sin cuota descontada del sueldo
+// ---------- Descuentos de un ingreso (préstamo, cuota, aporte que te descuentan del sueldo) ----------
+// Un gasto recurrente con "descuentaDe" = id de un ingreso recurrente. Al cobrar ese ingreso por el neto, la app
+// registra el ingreso por neto + descuentos y marca cada descuento del mes como pagado.
+// Compatibilidad: en la versión personal el BHU venía marcado con esBHU (gasto) y bhu (sueldo), con la cuota en cfg.bhuUI.
+const descuentaDe = p => p.descuentaDe || (p.esBHU ? (S.plant.find(x => x.tipo === 'ingreso' && x.bhu) || {}).id || null : null);
+const valorDesc = p => (p.esBHU && !p.descuentaDe && +S.cfg.bhuUI && S.cfg.monedas.some(m => m.id === 'UI')) ? {monto:+S.cfg.bhuUI, moneda:'UI'} : {monto:+p.monto || 0, moneda:p.moneda};
+const descuentosDe = id => id ? S.plant.filter(p => p.tipo === 'gasto' && p.activa !== false && descuentaDe(p) === id) : [];
+const totalDesc = id => descuentosDe(id).reduce((a, p) => { const v = valorDesc(p); return a + v.monto * tasaDe(v.moneda); }, 0); // en moneda principal
+const ingresosConDesc = () => S.plant.filter(p => p.tipo === 'ingreso' && p.activa !== false && descuentosDe(p.id).length);
+// Marca como pagados los descuentos del mes (los registra en la cuenta donde entró el ingreso, así el neto cierra)
+async function asegurarDescuentos(pid, mk, fecha, nombre, cuenta){
+  for (const d of descuentosDe(pid)){
+    const delMes = S.movs.filter(m => m.plantilla === d.id && mesDe(m.fecha) === mk);
+    if (delMes.some(m => m.estado === 'pagado' || m.estado === 'omitido')) continue;
+    const pend = delMes.find(m => m.estado === 'pend');
+    const v = valorDesc(d);
+    if (pend){ try { await S.db.collection(COL.movs).doc(pend.id).update({estado:'pagado', fecha}); } catch(e){} continue; }
+    await guardar(null, {...movDesdePlant(d, 'pagado', mk), fecha, monto:v.monto, moneda:v.moneda, tasa:tasaDe(v.moneda) || 1, cuenta: cuenta || d.cuenta || cuentaDefecto(), tarjeta:null, nota:'Descontado de ' + nombre, creado:Date.now()});
+  }
+}
 const plantHecha = (p, mk) => S.movs.some(m => m.plantilla === p.id && mesDe(m.fecha) === mk);
 const tarjetaDelMes = (mk, tid) => itemsDelMes(mk).filter(x => isCard(x.m) && (!tid || x.m.tarjeta === tid)).reduce((a,x)=>a+x.uyu,0);
 function idsTarjetas(mk){
@@ -437,7 +457,7 @@ function pendientes(mk){
   const list = [];
   if (mk < inicio()) return list;
   for (const x of itemsDelMes(mk)) if (x.m.estado === 'pend') list.push({kind:'mov', m:x.m, uyu:x.uyu});
-  for (const p of S.plant) if (p.activa !== false && !plantHecha(p, mk)) list.push({kind:'plant', p, uyu: toBase(p)});
+  for (const p of S.plant) if (p.activa !== false && !plantHecha(p, mk)) list.push({kind:'plant', p, uyu: toBase(p) + (p.tipo === 'ingreso' ? Math.round(totalDesc(p.id)) : 0)});
   // Pago estimado de cada tarjeta: las cuotas de su resumen anterior menos lo que ya pagaste o tenés cargado este mes
   const pagosDe = tid => S.movs.filter(m => m.tipo === 'pago' && m.tarjeta === tid && mesDe(m.fecha) === mk && m.estado !== 'omitido');
   if (addMes(mk,-1) < inicio()){
@@ -566,6 +586,8 @@ async function crearLocalDB(alCambiar){
   try { idb = await idbAbrir(); datos = (await idbOp(idb, 'readonly', st => st.get(LDB.clave))) || {}; motor = 'indexeddb'; }
   catch(e){ idb = null; try { datos = JSON.parse(localStorage.getItem(LDB.ls) || '{}'); localStorage.setItem(LDB.ls + '.prueba', '1'); motor = 'localstorage'; } catch(e2){ datos = {}; } }
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch(e){} // pide que el navegador no borre los datos solo
+  const habiaViejos = Object.keys(ALIAS).some(k => datos[k]) || CFG_ALIAS.some(k => (datos[COL.cfg.split('/')[0]] || {})[k]);
+  if (habiaViejos) normalizarDatos(datos);
   const subs = new Set(), clon = d => JSON.parse(JSON.stringify(d ?? null));
   let cola = Promise.resolve();
   const persistir = () => { const copia = clon(datos); cola = cola.then(async () => {
@@ -574,6 +596,7 @@ async function crearLocalDB(alCambiar){
     }).catch(() => toast('No se pudo guardar en este dispositivo')); return cola; };
   const avisar = () => setTimeout(() => subs.forEach(f => f()), 0);
   const cambio = async () => { avisar(); await persistir(); if (alCambiar) alCambiar(); };
+  if (habiaViejos) persistir();
   const marcar = (n, id, del) => { const m = datos[META] || (datos[META] = {}); (m[n] || (m[n] = {}))[id] = del ? {t: Date.now(), del: true} : {t: Date.now()}; };
   const col = n => datos[n] || (datos[n] = {});
   const snapDoc = (n, id) => ({id, exists: id in col(n), data: () => clon(col(n)[id]), metadata:{fromCache:false}});
@@ -607,7 +630,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e){} };
 let desuscribir = [];
 function conectar(){
   desuscribir.forEach(u => { try { u && u(); } catch(e){} }); desuscribir = [];
-  S.movs = []; S.plant = []; S.cfg = CFG0(); S.cfgExiste = false; S.slow = false;
+  S.movs = []; S.plant = []; S.plan = {}; S.hist = {}; S.cfg = CFG0(); S.cfgExiste = false; S.slow = false;
   Object.keys(S.ready).forEach(k => S.ready[k] = false);
   const timer = setTimeout(() => { S.slow = true; render(); }, 10000);
   const done = k => { S.ready[k] = true; if (Object.values(S.ready).every(Boolean)) { clearTimeout(timer); S.slow = false; } render(); };
@@ -615,16 +638,41 @@ function conectar(){
   const sub = (col, k, fn) => desuscribir.push(S.db.collection(col).onSnapshot(s => { fn(s.docs); if (!s.metadata.fromCache) done(k); else render(); }, fail(k)));
   sub(COL.movs, 'movs', docs => S.movs = docs.map(d => ({id:d.id, ...d.data()})));
   sub(COL.plant, 'plant', docs => S.plant = docs.map(d => ({id:d.id, ...d.data()})).sort((a,b)=>(a.orden||0)-(b.orden||0)));
+  sub('hist', 'hist', docs => { const h = {}; docs.forEach(d => h[d.id] = d.data()); S.hist = h; });
+  sub('planilla', 'plan', docs => { const h = {}; docs.forEach(d => h[d.id] = d.data()); S.plan = h; });
   desuscribir.push(S.db.doc(COL.cfg).onSnapshot(s => {
     if (s.exists){ const d = s.data(); S.cfg = {...CFG0(), ...d}; S.cfgExiste = true; if (S.mes < inicio()) S.mes = inicio(); }
     if (!s.metadata.fromCache) done('cfg'); else render();
   }, fail('cfg')));
 }
 // Todos los datos de la app, por colección: {movimientos:{id:{…}}, recurrentes:{…}, config:{app:{…}}}
+const clonar = o => JSON.parse(JSON.stringify(o ?? null));
+// Copias hechas con la versión personal de la app usan otros nombres: movs2, plant2 y config/v2. Se pasan a los de esta.
+const ALIAS = {movs2: COL.movs, plant2: COL.plant};
+const CFG_ALIAS = ['v2'];
+function normalizarDatos(d){
+  if (!d || typeof d !== 'object') return d;
+  const [cn, cid] = COL.cfg.split('/'), meta = d[META], ahora = Date.now();
+  const mover = (deN, deId, aN, aId) => {
+    const de = d[deN] || {}, a = d[aN] || (d[aN] = {});
+    if (deId in de && !(aId in a && !(meta && meta[aN] && meta[aN][aId] && meta[aN][aId].del))){
+      a[aId] = de[deId];
+      if (meta){ const m = meta[aN] || (meta[aN] = {}); m[aId] = {t: Math.max(((meta[deN] || {})[deId] || {}).t || 0, ahora)}; }
+    }
+  };
+  for (const [vie, nue] of Object.entries(ALIAS)){
+    if (!d[vie]) continue;
+    for (const id of Object.keys(d[vie])) mover(vie, id, nue, id);
+    delete d[vie]; if (meta) delete meta[vie];
+  }
+  if (d[cn]) for (const k of CFG_ALIAS){ if (d[cn][k]){ mover(cn, k, cn, cid); delete d[cn][k]; if (meta && meta[cn]) delete meta[cn][k]; } }
+  return d;
+}
 function datosActuales(){
   const sinId = arr => Object.fromEntries(arr.map(({id, ...d}) => [id, d]));
   const [cn, cid] = COL.cfg.split('/');
-  return {[COL.movs]: sinId(S.movs), [COL.plant]: sinId(S.plant), [cn]: S.cfgExiste ? {[cid]: {...S.cfg}} : {}};
+  const extra = {}; if (Object.keys(S.plan || {}).length) extra.planilla = clonar(S.plan); if (Object.keys(S.hist || {}).length) extra.hist = clonar(S.hist);
+  return {[COL.movs]: sinId(S.movs), [COL.plant]: sinId(S.plant), [cn]: S.cfgExiste ? {[cid]: {...S.cfg}} : {}, ...extra};
 }
 // Escribe una copia completa en una base. Con borrarIds, quita antes lo que no está en la copia.
 async function volcar(db, datos, actuales){
@@ -657,7 +705,7 @@ async function exportarCopia(){
 let IMP = null;
 async function leerCopia(file){
   let o; try { o = JSON.parse(await file.text()); } catch(e){ toast('No se pudo leer el archivo'); return; }
-  const d = o && o.app === 'mis-gastos' && o.datos && typeof o.datos === 'object' ? o.datos : null;
+  const d = o && o.app === 'mis-gastos' && o.datos && typeof o.datos === 'object' ? normalizarDatos(o.datos) : null;
   const [cn, cid] = COL.cfg.split('/');
   if (!d || typeof (d[COL.movs] || {}) !== 'object'){ toast('Ese archivo no es una copia de Mis gastos'); return; }
   IMP = {datos:d, fecha:o.exportado, nMovs:Object.keys(d[COL.movs] || {}).length, nPlant:Object.keys(d[COL.plant] || {}).length, cfg:(d[cn] || {})[cid] || null};
@@ -768,7 +816,7 @@ async function sincronizar(manual){
   try {
     const id = await buscarArchivo();
     const remoto = id ? await bajarArchivo(id) : null;
-    const rem = remoto && remoto.app === 'mis-gastos' && remoto.datos ? {...remoto.datos, [META]: remoto.meta || {}} : {};
+    const rem = remoto && remoto.app === 'mis-gastos' && remoto.datos ? normalizarDatos({...remoto.datos, [META]: remoto.meta || {}}) : {};
     const local = S.db.crudo(), fus = fusionar(local, rem);
     const cambiosDeDrive = canon(fus) !== canon(local);
     if (cambiosDeDrive) await S.db.cargarCrudo(fus);
@@ -918,8 +966,8 @@ function vInicio(){
     if (p.kind === 'est') return `<div class="prow"><div class="t" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pago ${esc(nomTj(p.tarjeta))}${esPpal(p.mon) ? '' : ` en ${esc(MON(p.mon).nombre.toLowerCase())}`}<small>${p.parcial ? 'Lo que falta del resumen de ' : 'Estimado con las cuotas de '}${nombreMes(addMes(mk,-1)).toLowerCase()}${esPpal(p.mon) ? '' : ` · ≈ ${fmt(p.uyu)}`}</small></div><span class="num">${fmtEn(p.monto, p.mon)}</span><button class="btn ok" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pagar</button><span></span></div>`;
     if (p.kind === 'mov') return `<div class="prow"><div class="t" data-act="edit" data-id="${p.m.id}">${esc(p.m.concepto)}<small>${esc(etiqueta(p.m))}${!esPpal(p.m.moneda)?' · '+fmtM(p.m):''}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="pagar" data-id="${p.m.id}">${okTxt(p.m.tipo)}</button><span></span></div>`;
     const t = p.p;
-    const sub = `${t.tipo==='gasto' ? (t.tarjeta ? nomTj(t.tarjeta) : nomCat(t.cat)) : t.tipo==='mover' ? `${nomCta(t.de)} → ${nomCta(t.a)}` : 'Ingreso'} · ${esPpal(t.moneda) ? 'monto habitual' : fmtM(t)}`;
-    return `<div class="prow"><div class="t" data-act="plantform" data-id="${t.id}">${esc(t.nombre)}<small>${esc(sub)}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="${t.bhu && +S.cfg.bhuUI ? 'plantform' : 'plantok'}" data-id="${t.id}">${okTxt(t.tipo)}</button><button class="btn ghost" data-act="plantskip" data-id="${t.id}" aria-label="No aplica este mes">Omitir</button></div>`;
+    const sub = `${t.tipo==='gasto' ? (t.tarjeta ? nomTj(t.tarjeta) : nomCat(t.cat)) : t.tipo==='mover' ? `${nomCta(t.de)} → ${nomCta(t.a)}` : 'Ingreso'} · ${t.tipo === 'ingreso' && descuentosDe(t.id).length ? `neto ${fmtM(t)} + descuentos ${fmt(totalDesc(t.id))}` : esPpal(t.moneda) ? 'monto habitual' : fmtM(t)}`;
+    return `<div class="prow"><div class="t" data-act="plantform" data-id="${t.id}">${esc(t.nombre)}<small>${esc(sub)}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="${t.tipo === 'ingreso' && descuentosDe(t.id).length ? 'plantform' : 'plantok'}" data-id="${t.id}">${okTxt(t.tipo)}</button><button class="btn ghost" data-act="plantskip" data-id="${t.id}" aria-label="No aplica este mes">Omitir</button></div>`;
   };
   const orden = {ingreso:0, gasto:1, pago:2, mover:3};
   const tipoDe = p => p.kind === 'est' ? 'pago' : (p.m || p.p).tipo;
@@ -1280,6 +1328,11 @@ function vAjustes(){
   <section class="panel"><h2>Gastos recurrentes y movimientos de todos los meses <span><button class="btn" data-act="plantnew">Agregar</button></span></h2>
     <p class="note" style="margin:0 0 6px">Alquiler, luz, internet, cuota del auto, sueldo, lo que ahorrás cada mes… Aparecen cada mes como pendientes hasta que los marcás como pagados u omitidos. Tocá uno para cambiar su monto habitual.</p>
     <div class="list">${S.plant.length ? S.plant.map(p => `<div class="row click" data-act="plantedit" data-id="${p.id}"><div class="t">${esc(p.nombre)}${p.activa===false?'<span class="pill est">Pausado</span>':''}</div><div class="m">${esc(tipoTxt(p))}</div><div class="a num">${fmtM(p)}</div></div>`).join('') : '<p class="empty">Todavía no hay ninguno.</p>'}</div></section>
+  ${(() => { const ings = S.plant.filter(x => x.tipo === 'ingreso' && descuentosDe(x.id).length); if (!ings.length) return '';
+    return `<section class="panel"><h2>Descuentos del sueldo</h2>
+      ${ings.map(ing => `<div class="list"><div class="row click" data-act="plantedit" data-id="${ing.id}"><div class="t">${esc(ing.nombre)}</div><div class="m">neto habitual ${fmtM(ing)} · cobrado en total ${fmt(toBase(ing) + totalDesc(ing.id))}</div><div class="a num">${fmt(totalDesc(ing.id))}</div></div>
+        ${descuentosDe(ing.id).map(d => { const v = valorDesc(d); return `<div class="row click" data-act="plantedit" data-id="${d.id}" style="padding-left:14px"><div class="t">${esc(d.nombre)}</div><div class="m">${esPpal(v.moneda) ? 'por mes' : fmtEn(v.monto, v.moneda) + ' por mes'}</div><div class="a num">${fmt(v.monto * tasaDe(v.moneda))}</div></div>`; }).join('')}</div>`).join('')}
+      <p class="note">Cuando registrás ${ings.length === 1 ? esc(ings[0].nombre) : 'uno de estos ingresos'} por lo que cobrás en mano, la app le suma estos descuentos y los marca como pagados en el mes. Para agregar otro, abrí un gasto de todos los meses y marcá "¿Te lo descuentan de un ingreso?".</p></section>`; })()}
   <section class="panel"><h2>Categorías de gastos <span><button class="btn" data-act="catnew">Agregar</button></span></h2>
     <div class="list">${CATS().map(k => { const n = usosCat(k.id); return `<div class="row click" role="button" tabindex="0" data-act="catedit" data-id="${esc(k.id)}"><div class="t"><i class="dot" style="background:${colCat(k.id)};display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:middle"></i>${esc(k.nombre)}${k.dia ? '<span class="tag">Día a día</span>' : ''}</div><div class="m">${n ? `${n} ${n === 1 ? 'gasto' : 'gastos'}` : 'Sin gastos'}</div><div class="a"><span class="ir" aria-hidden="true">›</span></div></div>`; }).join('')}</div>
     <p class="note">Tocá una para cambiarle el nombre o el color, o para borrarla. Las marcadas <em>Día a día</em> cuentan en el presupuesto del día a día.</p></section>
@@ -1327,6 +1380,9 @@ function abrirAyuda(){
       <div><h4>3. Cada mes</h4><ul>
         <li>En <strong>Pendientes</strong> aparecen tus gastos recurrentes y el pago estimado de cada tarjeta. Tocá <em>Pagado</em> si fue el monto habitual, o tocá el nombre para poner el monto real. <em>Omitir</em> lo saca solo de este mes.</li>
         <li><strong>Te queda a fin de mes</strong> es lo que entra a tus cuentas del día a día, menos lo que sale y lo que pasás a ahorro, contando lo pendiente.</li></ul></div>
+      <div><h4>Descuentos del sueldo</h4><ul>
+        <li>Si te descuentan algo del sueldo (un préstamo, una cuota, un aporte), cargalo como gasto de todos los meses y marcá <em>¿Te lo descuentan de un ingreso?</em> eligiendo tu sueldo. Aparece en <strong>Ajustes → Descuentos del sueldo</strong>.</li>
+        <li>Al cobrar, poné lo que cobraste en mano: la app suma los descuentos, registra el sueldo completo y marca los descuentos del mes como pagados. Podés tener varios descuentos y en más de un ingreso.</li></ul></div>
       <div><h4>Cuentas</h4><ul>
         <li>En <strong>Cuentas</strong>, el botón <em>+ Nuevo movimiento</em> te deja elegir: <strong>Depósito</strong> (plata que cobrás y entra a una cuenta), <strong>Retiro</strong> (sacar efectivo de una cuenta) o <strong>Mover entre cuentas</strong> (también para cambiar de moneda).</li>
         <li>El capital es la suma de tus cuentas de ahorro; las del día a día no cuentan.</li></ul></div>
@@ -1365,6 +1421,10 @@ function nuevoForm(base={}){
   F.montoTxt = F.monto ? dec(F.monto) : '';
   F.montoTxt = F.monto ? dec(F.monto) : '';
   F.resManual = !!((F.id || F.plRef) && F.mesResumen);
+  if (F.tipo === 'ingreso'){
+    if (F.neto != null){ F.monto = F.neto; F.montoTxt = dec(F.neto); F.inclDesc = true; F.ingDesc = F.plantilla && S.plant.some(x => x.id === F.plantilla && x.tipo === 'ingreso') ? F.plantilla : (S.plant.find(x => x.tipo === 'ingreso' && x.bhu) || {}).id || null; }
+    else if (F.plantilla && descuentosDe(F.plantilla).length){ F.ingDesc = F.plantilla; F.inclDesc = true; }
+  }
   abrirHoja();
 }
 function monedasForm(){ const ms = F.tipo === 'gasto' && F.tarjeta ? monedasDe('t', F.tarjeta) : monedasDe('c', F.cuenta); return F.moneda && !ms.includes(F.moneda) && S.cfg.monedas.some(m => m.id === F.moneda) ? ms.concat([F.moneda]) : ms; }
@@ -1404,6 +1464,11 @@ function abrirHoja(re){
     ${F.tipo === 'pago' ? '' : `<div class="field"><label for="f-concepto">${F.tipo==='gasto'?'Dónde / en qué':'Concepto'}</label><input class="inp" id="f-concepto" autocomplete="off" value="${esc(F.concepto)}" placeholder="${F.tipo==='gasto'?(F.cat==='Súper'?'Supermercado, feria…':'Farmacia, taxi…'):'Sueldo, aguinaldo…'}">
       ${sug.length ? chipsDe('f', 'concepto', sug.map(s => [s,s]), F.concepto) : ''}</div>`}
     ${medio}
+    ${F.tipo === 'ingreso' && !F.plRef ? (() => { const ings = ingresosConDesc();
+      if (!F.id && !F.ingDesc && ings.length && !F.plantilla) return `<div class="field"><span class="label">¿Es un ingreso con descuentos?</span>${chipsDe('f', 'ingDesc', [['', 'No']].concat(ings.map(x => [x.id, x.nombre])), '')}</div>`;
+      if (!F.ingDesc || !descuentosDe(F.ingDesc).length) return F.neto != null ? `<p class="note" style="margin:0">Registrado como neto ${fmtEn(F.neto, F.moneda)} + descuentos ${fmtEn(F.descTotal ?? (F.bhuDesc ? F.bhuDesc / (F.tasa || 1) : 0), F.moneda)}.</p>` : '';
+      const ds = descuentosDe(F.ingDesc), tot = descEnMoneda() * tasaDe(F.moneda);
+      return `<label class="check"><input type="checkbox" id="f-neto" ${F.inclDesc !== false ? 'checked' : ''}> Es lo que cobré en mano: sumar los descuentos (${esc(ds.map(d => `${d.nombre} ${fmtM({...valorDesc(d)})}`).join(', '))} = ${fmt(tot)}) y marcarlos como pagados</label>`; })() : ''}
     ${card && !F.plRef ? `<div class="two"><div class="field"><span class="label">Cuotas</span><div class="stepper"><button type="button" class="iconbtn" data-act="cuota" data-d="-1" aria-label="Menos cuotas">−</button><span class="num">${F.cuotas}</span><button type="button" class="iconbtn" data-act="cuota" data-d="1" aria-label="Más cuotas">+</button></div><span class="note num" id="f-cuota"></span></div>
       <div class="field"><span class="label">Se paga en</span><div class="stepper"><button type="button" class="iconbtn" data-act="res" data-d="-1" aria-label="Un mes antes">${chev('M15 18l-6-6 6-6')}</button><span class="num" style="min-width:5.5em">${corto(addMes(F.mesResumen,1))}</span><button type="button" class="iconbtn" data-act="res" data-d="1" aria-label="Un mes después">${chev('M9 18l6-6-6-6')}</button></div><span class="note">${t && t.cierre ? `Cierra el ${t.cierre}${t.vence ? ` · vence el ${t.vence}` : ''}` : 'Sin día de cierre'}</span></div></div>` : ''}
     <div class="two"><div class="field"><label for="f-fecha">Fecha</label><input class="inp" id="f-fecha" type="date" min="${primerMes()}-01" value="${F.fecha}"></div>
@@ -1420,6 +1485,7 @@ function leerForm(){
   const nf = $('#f-fecha')?.value; if (nf && nf !== F.fecha){ F.fecha = nf; F.resManual = false; }
   F.nota = $('#f-nota')?.value ?? F.nota;
   const dsc = $('#f-desc'); if (dsc) F.descontar = dsc.checked;
+  const nt = $('#f-neto'); if (nt) F.inclDesc = nt.checked;
 }
 // El pago pendiente de esa tarjeta, en esa moneda, en el mes del pago (para descontarle un adelanto)
 function pendienteDe(f){
@@ -1435,7 +1501,10 @@ function actualizarConv(){
     conv.hidden = !t.length;
   }
   const cu = $('#f-cuota'); if (cu) cu.textContent = isFinite(n) && F.cuotas > 1 ? `${fmtEn(n/F.cuotas, F.moneda)} por mes` : '';
+  if (conv && F && F.tipo === 'ingreso' && $('#f-neto')?.checked && isFinite(n)){ conv.textContent = (conv.textContent ? conv.textContent + ' · ' : '') + `Total registrado: ${fmtEn(n + descEnMoneda(), F.moneda)}`; conv.hidden = false; }
 }
+// Descuentos del ingreso del formulario, en su moneda (al editar, los que se guardaron ese mes)
+function descEnMoneda(){ const prev = F.id ? S.movs.find(m => m.id === F.id) : null; if (prev && prev.neto != null) return prev.descTotal ?? (prev.bhuDesc ? prev.bhuDesc / (prev.tasa || 1) : 0); return Math.round(totalDesc(F.ingDesc) / (tasaDe(F.moneda) || 1) * 100) / 100; }
 async function enviarForm(){
   leerForm();
   const monto = parseNum(F.montoTxt);
@@ -1460,9 +1529,13 @@ async function enviarForm(){
     if (await guardarEnPlanilla(mkF, F.plRef ? F.plRef.idx : null, movAPlan(data, old))){ const ed = !!F.plRef; cerrar(); toast(ed ? 'Cambios guardados' : 'Movimiento guardado'); }
     return;
   }
+  const conDesc = F.tipo === 'ingreso' && F.ingDesc && descuentosDe(F.ingDesc).length && F.inclDesc !== false && $('#f-neto');
+  if (conDesc){ const d = descEnMoneda(); data.neto = monto; data.descTotal = d; data.monto = Math.round((monto + d) * 100) / 100; data.plantilla = F.ingDesc; }
+  else if (F.tipo === 'ingreso' && prev && prev.neto != null && !$('#f-neto')){ data.neto = monto; data.descTotal = prev.descTotal ?? (prev.bhuDesc ? prev.bhuDesc / (prev.tasa || 1) : 0); data.monto = Math.round((monto + data.descTotal) * 100) / 100; }
   const pendPago = !F.id && data.estado === 'pagado' && F.descontar !== false ? pendienteDe(F) : null;
   const ok = await guardar(F.id, data);
   if (!ok) return;
+  if (conDesc && data.estado === 'pagado') await asegurarDescuentos(F.ingDesc, mkF, data.fecha, data.concepto, data.cuenta);
   if (pendPago){ // adelanto o pago parcial: baja lo pendiente de esa tarjeta
     const resto = Math.round((pendPago.monto - monto) * 100) / 100;
     try { if (resto > 0) await S.db.collection(COL.movs).doc(pendPago.id).update({monto: resto}); else await S.db.collection(COL.movs).doc(pendPago.id).delete(); } catch(e){}
@@ -1609,6 +1682,7 @@ function abrirPlant(p, re){
     if (!S.cfg.cuentas.length){ toast('Primero agregá una cuenta'); return; }
     P = p ? {...p} : {id:null, nombre:'', tipo:'gasto', cat:'Fijos', cuenta:cuentaDefecto(), tarjeta:null, de:cuentaDefecto(), a:(S.cfg.cuentas.find(c => c.tipo === 'ahorro') || {}).id || null, monto:'', moneda:monP().id, activa:true, orden: S.plant.length + 1};
     P.montoTxt = P.monto !== '' && P.monto != null ? dec(P.monto) : '';
+    if (p && p.esBHU && !p.descuentaDe){ P.descuentaDe = descuentaDe(p) || ''; const v = valorDesc(p); P.monto = v.monto; P.moneda = v.moneda; P.montoTxt = dec(v.monto); }
   }
   if (P.tipo === 'mover'){ if (!CTA(P.de)) P.de = cuentaDefecto(); if (!CTA(P.a) || P.a === P.de) P.a = (S.cfg.cuentas.find(c => c.id !== P.de) || {}).id || null; }
   else if (!CTA(P.cuenta)) P.cuenta = cuentaDefecto();
@@ -1623,7 +1697,10 @@ function abrirPlant(p, re){
     ${P.tipo==='gasto' ? `<div class="field"><span class="label">Categoría</span>${chipsDe('p', 'cat', CATS().map(c => [c.id, c.nombre]), P.cat)}</div>
     <div class="field"><span class="label">Subcategoría de recurrentes</span>${chipsDe('p', 'sub', SUBS().map(x => [x.id, x.nombre]).concat([['', 'Ninguna']]), P.sub || '')}</div>
       <div class="field"><span class="label">Se paga con</span><div class="medios"><span class="note">Cuenta</span>${chipsDe('p', 'medio', ctas.map(([id,n]) => ['c:'+id, n]), P.tarjeta ? '' : 'c:'+P.cuenta)}${tjs.length ? `<span class="note">Crédito</span>${chipsDe('p', 'medio', tjs.map(([id,n]) => ['t:'+id, n]), P.tarjeta ? 't:'+P.tarjeta : '')}` : ''}</div></div>` : ''}
-    ${P.tipo==='ingreso' ? `<div class="field"><span class="label">Entra en</span>${chipsDe('p', 'cuenta', ctas, P.cuenta)}</div>` : ''}
+    ${P.tipo==='gasto' ? (() => { const ings = S.plant.filter(x => x.tipo === 'ingreso' && x.id !== P.id);
+      return `<div class="field"><span class="label">¿Te lo descuentan de un ingreso?</span>${ings.length ? chipsDe('p', 'descuentaDe', [['', 'No']].concat(ings.map(x => [x.id, 'Sí, de ' + x.nombre])), P.descuentaDe || '') : ''}
+        <p class="note" style="margin:0">${ings.length ? 'Para lo que te descuentan del sueldo (un préstamo, una cuota, un aporte). Al cobrar ese ingreso por el neto, la app le suma este monto y lo marca como pagado.' : 'Si te lo descuentan del sueldo, agregá primero el sueldo como ingreso de todos los meses y después marcalo acá.'}</p></div>`; })() : ''}
+    ${P.tipo==='ingreso' ? `<div class="field"><span class="label">Entra en</span>${chipsDe('p', 'cuenta', ctas, P.cuenta)}</div>${descuentosDe(P.id).length ? `<p class="note" style="margin:0">Monto habitual = lo que cobrás en mano (neto). Tiene ${descuentosDe(P.id).length === 1 ? 'un descuento' : descuentosDe(P.id).length + ' descuentos'}: ${esc(descuentosDe(P.id).map(d => d.nombre).join(', '))} (${fmt(totalDesc(P.id))}).</p>` : ''}` : ''}
     ${P.tipo==='mover' ? `<div class="field"><span class="label">Sale de</span>${chipsDe('p', 'de', ctas, P.de)}</div><div class="field"><span class="label">Entra en</span>${chipsDe('p', 'a', ctas.filter(([id]) => id !== P.de), P.a)}</div>` : ''}
     <div class="two"><div class="field"><label for="p-monto">Monto habitual</label><input class="inp" id="p-monto" inputmode="decimal" value="${esc(P.montoTxt)}"></div>
       <div class="field"><span class="label">Moneda</span>${ms.length > 1 ? seg('p', 'moneda', ms.map(x => [x, monLbl(x)]), P.moneda) : `<span style="padding:10px 0;font-weight:600">${esc(MON(P.moneda).nombre)}</span>`}</div></div>
@@ -1640,8 +1717,8 @@ async function enviarPlant(){
   if (P.tipo === 'mover' && (!P.a || P.a === P.de)){ toast('Elegí a qué cuenta va'); return; }
   const data = {nombre:P.nombre, tipo:P.tipo, monto, moneda:P.moneda, activa:P.activa!==false, orden:P.orden||99};
   if (P.tipo === 'mover' && P.modo) data.modo = P.modo;
-  if (P.tipo === 'gasto'){ data.sub = SUB(P.sub) ? P.sub : null; data.cat = P.cat || 'Fijos'; data.tarjeta = P.tarjeta || null; data.cuenta = P.tarjeta ? null : P.cuenta; }
-  else if (P.tipo === 'ingreso'){ data.cuenta = P.cuenta; }
+  if (P.tipo === 'gasto'){ data.sub = SUB(P.sub) ? P.sub : null; data.cat = P.cat || 'Fijos'; data.tarjeta = P.tarjeta || null; data.cuenta = P.tarjeta ? null : P.cuenta; data.descuentaDe = P.descuentaDe && S.plant.some(x => x.id === P.descuentaDe) ? P.descuentaDe : null; }
+  else if (P.tipo === 'ingreso'){ data.cuenta = P.cuenta; if (P.bhu) data.bhu = true; }
   else { data.de = P.de; data.a = P.a; const ma = monedasDe('c', P.a); data.monA = ma.includes(P.moneda) ? P.moneda : (ma.includes(monP().id) ? monP().id : ma[0]); }
   if (!S.db){ toast('Sin conexión con la base de datos'); return; }
   if (!S.cfgExiste && !(await guardarCfg({}))) return;
@@ -1656,6 +1733,7 @@ function movDesdePlant(p, estado, mk){
     tasa: tasaDe(p.moneda) || 1, cuenta: p.cuenta || null, tarjeta: p.tarjeta || null, cuotas:1, estado, nota:'', plantilla:p.id, creado:Date.now()};
   if (p.tipo === 'mover'){ o.modo = p.modo || 'mover'; o.de = p.de; o.a = p.a; o.monA = p.monA || p.moneda; o.montoA = Math.round(convierte(monto, p.moneda, o.monA) * 100) / 100; o.cuenta = null; }
   if (p.tarjeta) o.mesResumen = mk;
+  if (p.tipo === 'ingreso' && estado !== 'omitido'){ const d = totalDesc(p.id); if (d > 0){ o.neto = monto; o.descTotal = Math.round(d / (tasaDe(p.moneda) || 1) * 100) / 100; o.monto = monto + o.descTotal; } }
   return o;
 }
 
@@ -1775,6 +1853,7 @@ document.addEventListener('click', async ev => {
     else if (k === 'medio'){ const [tp, id] = [v.slice(0,1), v.slice(2)]; if (tp === 't'){ F.tarjeta = id; } else { F.tarjeta = null; F.cuenta = id; F.cuotas = 1; } F.resManual = false; arreglarMoneda(); }
     else if (k === 'cuenta'){ F.cuenta = v; arreglarMoneda(); }
     else if (k === 'tarjeta'){ F.tarjeta = v; const cp = TJ(v)?.cuentaPago; if (cp && CTA(cp)) F.cuenta = cp; arreglarMoneda(); }
+    else if (k === 'ingDesc'){ F.ingDesc = v || null; F.plantilla = v || null; F.inclDesc = true; const pi = S.plant.find(x => x.id === v); if (pi){ if (!F.concepto) F.concepto = pi.nombre; if (!F.montoTxt) F.montoTxt = dec(pi.monto); } }
     else F[k] = v;
     abrirHoja(true); if (k === 'concepto') $('#f-monto')?.focus(); return;
   }
