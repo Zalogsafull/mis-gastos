@@ -1,11 +1,13 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>Mis gastos</title>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><title>Mis gastos</title>
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#1d68b0">
+<meta name="theme-color" content="#14202c">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Mis gastos">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head><body>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -740,7 +742,7 @@ async function cambiarModo(nuevo){
   toast(nuevo === 'local' ? (vacio ? 'Ahora se guarda en este dispositivo' : 'Este dispositivo ya tenía datos: se muestran esos') : (vacio ? 'Ahora se guarda en tu cuenta de Claude' : 'Tu cuenta ya tenía datos: se muestran esos'));
 }
 function registrarSW(){
-  if (S.claudeDB || !('serviceWorker' in navigator) || location.protocol !== 'https:') return;
+  if (S.claudeDB || !('serviceWorker' in navigator) || !enWeb()) return;
   try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch(e){}
 }
 // ---------- Google Drive: cada persona guarda su base en un archivo de su propio Drive ----------
@@ -993,7 +995,7 @@ function vInicio(){
     <span class="big num">${fmt(r.saldoFin)}</span>
     ${barraSemanas(mk, r.saldoFin)}
     <div class="hoy num"><span class="label">Sin contar pendientes</span><span class="hv">${fmt(totCj)}</span>
-      ${monCj.length > 1 || (monCj.length === 1 && !esPpal(monCj[0])) || hayCambio ? `<div class="monedas">${(monCj.length ? monCj : [monP().id]).map(k => `<span>En ${esc(MON(k).nombre.toLowerCase())} <b>${fmtEn(cj[k]||0, k)}</b></span>`).join('')}${hayCambio ? '<button class="btn inv" data-act="cambio">Cambiar moneda</button>' : ''}</div>` : ''}</div>
+      ${mk >= inicio() && (monCj.length > 1 || (monCj.length === 1 && !esPpal(monCj[0])) || hayCambio) ? `<div class="monedas">${(monCj.length ? monCj : [monP().id]).map(k => `<span>En ${esc(MON(k).nombre.toLowerCase())} <b>${fmtEn(cj[k]||0, k)}</b></span>`).join('')}${hayCambio ? '<button class="btn inv" data-act="cambio">Cambiar moneda</button>' : ''}</div>` : ''}</div>
     <div class="flow" aria-hidden="true"><i style="width:${w(r.salida+r.salP)}%;background:var(--c-extras)"></i><i style="width:${w(Math.max(0, r.ahorro+r.ahoP))}%;background:var(--c-ahorro)"></i></div>
     <div class="sub num"><button type="button" class="lnk" data-act="ir" data-filtro="ingreso">Ingresos ${fmt(r.ing + r.ingP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="salidas">Salidas ${fmt(r.salida + r.salP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="mover">Ahorro ${fmt(r.ahorro + r.ahoP)}</button></div>
   </section>
