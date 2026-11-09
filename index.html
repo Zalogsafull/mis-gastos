@@ -60,7 +60,9 @@ main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px
 .view{display:grid;gap:16px}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .monthnav{display:flex;align-items:center;gap:4px}
-.monthnav h1{font-size:22px;min-width:9.5em;text-align:center}
+.monthnav h1{font-size:22px;min-width:8.6em;text-align:center}
+.iconbtn.hoybtn{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.iconbtn.hoybtn[hidden]{display:grid!important;visibility:hidden}
 .iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;width:38px;height:38px;display:grid;place-items:center}
 .iconbtn svg{width:18px;height:18px}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
@@ -455,6 +457,56 @@ function idsTarjetas(mk){
   for (const x of itemsDelMes(addMes(mk,-1)).concat(itemsDelMes(mk))) if (isCard(x.m)) ids.add(x.m.tarjeta);
   return [...ids];
 }
+// ---------- Lo que pasa de un mes al siguiente en una tarjeta ----------
+// Al pagar menos o más que el resumen, el pago puede llevar traslado = {monto, moneda}:
+// positivo = lo que faltó pagar pasa al resumen siguiente; negativo = saldo a favor que se descuenta del siguiente.
+const pagosTarjeta = (mk, tid, excluir) => S.movs.filter(m => m.tipo === 'pago' && m.tarjeta === tid && mesDe(m.fecha) === mk && m.estado !== 'omitido' && m.id !== excluir);
+const _cacheTj = new Map(); let _cacheTjMovs = null, _cacheTjPlan = null, _cacheTjCfg = null;
+function memoTj(k, fn){ if (_cacheTjMovs !== S.movs || _cacheTjPlan !== S.plan || _cacheTjCfg !== S.cfg){ _cacheTj.clear(); _cacheTjMovs = S.movs; _cacheTjPlan = S.plan; _cacheTjCfg = S.cfg; } if (!_cacheTj.has(k)) _cacheTj.set(k, fn()); return _cacheTj.get(k); }
+// Lo que sale de un mes hacia el siguiente, por moneda: los traslados elegidos al pagar y el saldo a favor que todavía no se usó
+function arrastre(mk, tid){
+  if (mk < inicio()) return {};
+  return memoTj('a|' + mk + '|' + tid, () => {
+    const out = {};
+    for (const m of pagosTarjeta(mk, tid)) if (m.traslado && +m.traslado.monto) out[m.traslado.moneda] = (out[m.traslado.moneda] || 0) + (+m.traslado.monto);
+    if (addMes(mk, -1) >= inicio()) for (const [mon, v] of Object.entries(restoTarjeta(mk, tid).credito)) out[mon] = (out[mon] || 0) - v;
+    return out;
+  });
+}
+// Lo que falta pagar de una tarjeta en un mes, por moneda (meses de la app; el anterior también de la app)
+function restoTarjeta(mk, tid, excluir){
+  const calc = () => {
+    const deuda = {}, pagado = {};
+    for (const x of itemsDelMes(addMes(mk,-1))) if (isCard(x.m) && x.m.tarjeta === tid){ const n = Math.max(1, x.cuotas || 1); deuda[x.m.moneda] = (deuda[x.m.moneda] || 0) + (+x.m.monto || 0) / n; }
+    const entra = arrastre(addMes(mk, -1), tid);
+    for (const [mon, v] of Object.entries(entra)) deuda[mon] = (deuda[mon] || 0) + v;
+    const ps = pagosTarjeta(mk, tid, excluir);
+    for (const m of ps){ pagado[m.moneda] = (pagado[m.moneda] || 0) + (+m.monto || 0); if (m.traslado && +m.traslado.monto) pagado[m.traslado.moneda] = (pagado[m.traslado.moneda] || 0) + (+m.traslado.monto); }
+    const mons = [...new Set(Object.keys(deuda).concat(Object.keys(pagado)))];
+    const resto = Object.fromEntries(mons.map(k => [k, (deuda[k] || 0) - (pagado[k] || 0)]));
+    // lo pagado de más en una moneda (ej. la parte en dólares pagada en pesos) cubre la otra con la cotización de hoy
+    let sobraBase = mons.reduce((a,k) => a + Math.max(0, -resto[k]) * tasaDe(k), 0);
+    for (const k of mons.sort((a,b) => esPpal(a) ? -1 : esPpal(b) ? 1 : 0)) if (resto[k] > 0 && sobraBase > 0){ const q = Math.min(resto[k], sobraBase / tasaDe(k)); resto[k] -= q; sobraBase -= q * tasaDe(k); }
+    // saldo a favor que vino del mes anterior y no se usó: sigue al mes siguiente
+    const credito = {};
+    for (const [mon, v] of Object.entries(entra)) if (v < 0 && resto[mon] < -0.004) credito[mon] = Math.min(-v, -resto[mon]);
+    return {resto, credito, pagos: ps};
+  };
+  return excluir ? calc() : memoTj('r|' + mk + '|' + tid, calc);
+}
+// Para el formulario de pago: cuánto debía esa tarjeta este mes antes de este pago, en la moneda del pago
+function deudaAntesDelPago(f){
+  if (!f || f.tipo !== 'pago' || !f.tarjeta || !f.fecha) return null;
+  const mk = mesDe(f.fecha); if (mk < inicio()) return null;
+  if (addMes(mk, -1) < inicio()){ // primer mes: el resumen anterior viene de la planilla, en pesos
+    const pagado = pagosTarjeta(mk, f.tarjeta, f.id).reduce((a,m) => a + toBase(m) + (m.traslado && +m.traslado.monto ? +m.traslado.monto * tasaDe(m.traslado.moneda) : 0), 0);
+    return {monto: (tarjetaDelMes(addMes(mk,-1), f.tarjeta) - pagado) / (tasaDe(f.moneda) || 1), moneda: f.moneda};
+  }
+  const {resto} = restoTarjeta(mk, f.tarjeta, f.id);
+  if ((resto[f.moneda] || 0) > 0.004) return {monto: resto[f.moneda], moneda: f.moneda};
+  const base = Object.entries(resto).reduce((a,[k,v]) => a + Math.max(0, v) * tasaDe(k), 0);
+  return {monto: base / (tasaDe(f.moneda) || 1), moneda: f.moneda};
+}
 function pendientes(mk){
   const list = [];
   if (mk < inicio()) return list;
@@ -464,22 +516,16 @@ function pendientes(mk){
   const pagosDe = tid => S.movs.filter(m => m.tipo === 'pago' && m.tarjeta === tid && mesDe(m.fecha) === mk && m.estado !== 'omitido');
   if (addMes(mk,-1) < inicio()){
     // El mes anterior viene de la planilla, donde las compras no siempre están separadas por tarjeta: lo pagado de más en una cubre a las otras
-    const ests = idsTarjetas(mk).map(tid => { const pagos = pagosDe(tid).reduce((a,m) => a + toBase(m), 0); return {tid, pagos, est: tarjetaDelMes(addMes(mk,-1), tid) - pagos}; });
+    const ests = idsTarjetas(mk).map(tid => { const pagos = pagosDe(tid).reduce((a,m) => a + toBase(m) + (m.traslado && +m.traslado.monto ? +m.traslado.monto * tasaDe(m.traslado.moneda) : 0), 0); return {tid, pagos, est: tarjetaDelMes(addMes(mk,-1), tid) - pagos}; });
     let sobra = ests.reduce((a,e) => a + Math.max(0, -e.est), 0); for (const e of ests) if (e.est > 0 && sobra > 0){ const q = Math.min(e.est, sobra); e.est -= q; sobra -= q; }
     for (const e of ests) if (e.est > 1) list.push({kind:'est', tarjeta:e.tid, mon:monP().id, monto:e.est, uyu:e.est, parcial: e.pagos > 0});
     return list;
   }
   // Pago de cada tarjeta separado por moneda: las cuotas del resumen anterior en esa moneda menos lo pagado en esa moneda.
   // Si pagaste de más en una moneda (ej. la parte en dólares pagada en pesos), cubre la otra con la cotización de hoy.
-  for (const tid of idsTarjetas(mk)){
-    const deuda = {}, pagado = {};
-    for (const x of itemsDelMes(addMes(mk,-1))) if (isCard(x.m) && x.m.tarjeta === tid){ const n = Math.max(1, x.cuotas || 1); deuda[x.m.moneda] = (deuda[x.m.moneda] || 0) + (+x.m.monto || 0) / n; }
-    const ps = pagosDe(tid); for (const m of ps) pagado[m.moneda] = (pagado[m.moneda] || 0) + (+m.monto || 0);
-    const mons = [...new Set(Object.keys(deuda).concat(Object.keys(pagado)))];
-    const resto = Object.fromEntries(mons.map(k => [k, (deuda[k] || 0) - (pagado[k] || 0)]));
-    let sobraBase = mons.reduce((a,k) => a + Math.max(0, -resto[k]) * tasaDe(k), 0);
-    for (const k of mons.sort((a,b) => esPpal(a) ? -1 : esPpal(b) ? 1 : 0)) if (resto[k] > 0 && sobraBase > 0){ const q = Math.min(resto[k], sobraBase / tasaDe(k)); resto[k] -= q; sobraBase -= q * tasaDe(k); }
-    for (const k of mons) if (resto[k] * tasaDe(k) > 1) list.push({kind:'est', tarjeta:tid, mon:k, monto: Math.round(resto[k] * 100) / 100, uyu: resto[k] * tasaDe(k), parcial: ps.length > 0});
+  for (const tid of new Set(idsTarjetas(mk).concat(S.movs.filter(m => m.tipo === 'pago' && m.traslado && mesDe(m.fecha) === addMes(mk,-1)).map(m => m.tarjeta)))){
+    const {resto, pagos: ps} = restoTarjeta(mk, tid), entra = arrastre(addMes(mk,-1), tid);
+    for (const k of Object.keys(resto)) if (resto[k] * tasaDe(k) > 1) list.push({kind:'est', tarjeta:tid, mon:k, monto: Math.round(resto[k] * 100) / 100, uyu: resto[k] * tasaDe(k), parcial: ps.length > 0, entra: entra[k] || 0});
   }
   return list;
 }
@@ -922,7 +968,7 @@ function banner(){
   return '';
 }
 const chev = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="${d}"/></svg>`;
-const monthNav = () => `<div class="monthnav"><button class="iconbtn" data-act="mes" data-d="-1" aria-label="Mes anterior"${S.mes <= primerMes() ? ' disabled style="opacity:.35"' : ''}>${chev('M15 18l-6-6 6-6')}</button><h1>${nombreMes(S.mes)}</h1><button class="iconbtn" data-act="mes" data-d="1" aria-label="Mes siguiente">${chev('M9 18l6-6-6-6')}</button></div>`;
+const monthNav = () => `<div class="monthnav"><button class="iconbtn" data-act="mes" data-d="-1" aria-label="Mes anterior"${S.mes <= primerMes() ? ' disabled style="opacity:.35"' : ''}>${chev('M15 18l-6-6 6-6')}</button><h1>${nombreMes(S.mes)}</h1><button class="iconbtn" data-act="mes" data-d="1" aria-label="Mes siguiente">${chev('M9 18l6-6-6-6')}</button><button class="iconbtn hoybtn" data-act="mes-hoy" aria-label="Ir al mes actual" title="Ir al mes actual"${S.mes === hoyMes() ? ' hidden' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><circle cx="12" cy="15.5" r="1.8" fill="currentColor" stroke="none"/></svg></button></div>`;
 
 function etiqueta(m){
   if (m.tipo === 'gasto') return nomCat(m.cat);
@@ -938,7 +984,7 @@ function filaMov(x){
   if (x.cuotas > 1 && x.cuota) extra.push(`<span class="pill card">${x.cuota}/${x.cuotas}</span>`);
   else if (isCard(m)) extra.push(`<span class="pill card">${esc(nomTj(m.tarjeta))}</span>`);
   if (m.estado === 'pend') extra.push(`<span class="pill pend">Pendiente</span>`);
-  const meta = [m.virtual === 'plant' ? 'monto habitual' : m.virtual ? 'este mes' : dia(m.fecha), etiqueta(m), isCard(m) ? '' : medioTxt(m), !esPpal(m.moneda) ? fmtM(m) + (x.cuotas>1?' total':'') : ''].filter(Boolean).join(' · ');
+  const meta = [m.virtual === 'plant' ? 'monto habitual' : m.virtual ? 'este mes' : dia(m.fecha), etiqueta(m), isCard(m) ? '' : medioTxt(m), !esPpal(m.moneda) ? fmtM(m) + (x.cuotas>1?' total':'') : '', m.traslado && +m.traslado.monto ? (m.traslado.monto > 0 ? `pasan ${fmtEn(m.traslado.monto, m.traslado.moneda)} al mes siguiente` : `${fmtEn(-m.traslado.monto, m.traslado.moneda)} a favor para el mes siguiente`) : ''].filter(Boolean).join(' · ');
   return `<div class="row click" ${accionFila(x)}><div class="t">${esc(m.concepto || TIPOS[m.tipo] || '')}${extra.join('')}</div><div class="m">${esc(meta)}</div><div class="a num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</div></div>`;
 }
 
@@ -965,7 +1011,7 @@ function vInicio(){
   const tile = (lbl, v, col, sub, fl) => `<button type="button" class="tile tile-btn" data-act="ir" data-filtro="${fl}" aria-label="Ver movimientos de ${esc(lbl)}"><span class="label"><i class="dot" style="background:${col.startsWith('--') ? `var(${col})` : col}"></i>${esc(lbl)}<span class="ir" aria-hidden="true">›</span></span><span class="v num">${fmt(v)}</span>${sub?`<span class="note num">${sub}</span>`:''}</button>`;
   const okTxt = t => t === 'ingreso' ? 'Cobrado' : t === 'mover' ? 'Hecho' : 'Pagado';
   const pRow = p => {
-    if (p.kind === 'est') return `<div class="prow"><div class="t" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pago ${esc(nomTj(p.tarjeta))}${esPpal(p.mon) ? '' : ` en ${esc(MON(p.mon).nombre.toLowerCase())}`}<small>${p.parcial ? 'Lo que falta del resumen de ' : 'Estimado con las cuotas de '}${nombreMes(addMes(mk,-1)).toLowerCase()}${esPpal(p.mon) ? '' : ` · ≈ ${fmt(p.uyu)}`}</small></div><span class="num">${fmtEn(p.monto, p.mon)}</span><button class="btn ok" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pagar</button><span></span></div>`;
+    if (p.kind === 'est') return `<div class="prow"><div class="t" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pago ${esc(nomTj(p.tarjeta))}${esPpal(p.mon) ? '' : ` en ${esc(MON(p.mon).nombre.toLowerCase())}`}<small>${p.parcial ? 'Lo que falta del resumen de ' : 'Estimado con las cuotas de '}${nombreMes(addMes(mk,-1)).toLowerCase()}${p.entra > 0.004 ? ` + ${fmtEn(p.entra, p.mon)} que pasaron del mes anterior` : p.entra < -0.004 ? ` − ${fmtEn(-p.entra, p.mon)} a favor del mes anterior` : ''}${esPpal(p.mon) ? '' : ` · ≈ ${fmt(p.uyu)}`}</small></div><span class="num">${fmtEn(p.monto, p.mon)}</span><button class="btn ok" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pagar</button><span></span></div>`;
     if (p.kind === 'mov') return `<div class="prow"><div class="t" data-act="edit" data-id="${p.m.id}">${esc(p.m.concepto)}<small>${esc(etiqueta(p.m))}${!esPpal(p.m.moneda)?' · '+fmtM(p.m):''}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="pagar" data-id="${p.m.id}">${okTxt(p.m.tipo)}</button><span></span></div>`;
     const t = p.p;
     const sub = `${t.tipo==='gasto' ? (t.tarjeta ? nomTj(t.tarjeta) : nomCat(t.cat)) : t.tipo==='mover' ? `${nomCta(t.de)} → ${nomCta(t.a)}` : 'Ingreso'} · ${t.tipo === 'ingreso' && descuentosDe(t.id).length ? `neto ${fmtM(t)} + descuentos ${fmt(totalDesc(t.id))}` : esPpal(t.moneda) ? 'monto habitual' : fmtM(t)}`;
@@ -1382,6 +1428,9 @@ function abrirAyuda(){
       <div><h4>3. Cada mes</h4><ul>
         <li>En <strong>Pendientes</strong> aparecen tus gastos recurrentes y el pago estimado de cada tarjeta. Tocá <em>Pagado</em> si fue el monto habitual, o tocá el nombre para poner el monto real. <em>Omitir</em> lo saca solo de este mes.</li>
         <li><strong>Te queda a fin de mes</strong> es lo que entra a tus cuentas del día a día, menos lo que sale y lo que pasás a ahorro, contando lo pendiente.</li></ul></div>
+      <div><h4>Pagar menos o más que el resumen</h4><ul>
+        <li>Si pagás una tarjeta por menos que el resumen (por ejemplo, el mínimo), aparece un tilde para <strong>pasar lo que falta al resumen del mes siguiente</strong>. Sin el tilde, lo que falta queda pendiente en este mes.</li>
+        <li>Si pagás de más o hacés un adelanto, el tilde <strong>descuenta ese saldo a favor del resumen siguiente</strong>. Si el saldo a favor es mayor que ese resumen, lo que sobra sigue pasando.</li></ul></div>
       <div><h4>Descuentos del sueldo</h4><ul>
         <li>Si te descuentan algo del sueldo (un préstamo, una cuota, un aporte), cargalo como gasto de todos los meses y marcá <em>¿Te lo descuentan de un ingreso?</em> eligiendo tu sueldo. Aparece en <strong>Ajustes → Descuentos del sueldo</strong>.</li>
         <li>Al cobrar, poné lo que cobraste en mano: la app suma los descuentos, registra el sueldo completo y marca los descuentos del mes como pagados. Podés tener varios descuentos y en más de un ingreso.</li></ul></div>
@@ -1423,6 +1472,7 @@ function nuevoForm(base={}){
   F.montoTxt = F.monto ? dec(F.monto) : '';
   F.montoTxt = F.monto ? dec(F.monto) : '';
   F.resManual = !!((F.id || F.plRef) && F.mesResumen);
+  if (F.tipo === 'pago') F.trasladar = !!(F.traslado && +F.traslado.monto);
   if (F.tipo === 'ingreso'){
     if (F.neto != null){ F.monto = F.neto; F.montoTxt = dec(F.neto); F.inclDesc = true; F.ingDesc = F.plantilla && S.plant.some(x => x.id === F.plantilla && x.tipo === 'ingreso') ? F.plantilla : (S.plant.find(x => x.tipo === 'ingreso' && x.bhu) || {}).id || null; }
     else if (F.plantilla && descuentosDe(F.plantilla).length){ F.ingDesc = F.plantilla; F.inclDesc = true; }
@@ -1462,6 +1512,7 @@ function abrirHoja(re){
     ${F.tipo==='pago' ? `<p class="note" style="margin:-6px 0 0">El pago de la factura de una tarjeta, o un adelanto. Una compra con tarjeta se carga en Gasto.</p>` : ''}
     <div class="amount"><button type="button" data-act="moneda" aria-label="Cambiar moneda"${ms.length < 2 ? ' tabindex="-1"' : ''}>${esc(monLbl(F.moneda))}</button><input id="f-monto" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(F.montoTxt)}" aria-label="Monto"></div>
     <p class="note num" id="f-conv" style="margin:-6px 0 0"></p>
+    ${F.tipo === 'pago' ? '<div id="f-tras"></div>' : ''}
     ${F.tipo==='gasto' ? `<div class="field"><span class="label">Categoría</span>${chipsDe('f', 'cat', CATS().map(c => [c.id, c.nombre]), F.cat)}</div>` : ''}
     ${F.tipo === 'pago' ? '' : `<div class="field"><label for="f-concepto">${F.tipo==='gasto'?'Dónde / en qué':'Concepto'}</label><input class="inp" id="f-concepto" autocomplete="off" value="${esc(F.concepto)}" placeholder="${F.tipo==='gasto'?(F.cat==='Súper'?'Supermercado, feria…':'Farmacia, taxi…'):'Sueldo, aguinaldo…'}">
       ${sug.length ? chipsDe('f', 'concepto', sug.map(s => [s,s]), F.concepto) : ''}</div>`}
@@ -1488,6 +1539,7 @@ function leerForm(){
   F.nota = $('#f-nota')?.value ?? F.nota;
   const dsc = $('#f-desc'); if (dsc) F.descontar = dsc.checked;
   const nt = $('#f-neto'); if (nt) F.inclDesc = nt.checked;
+  const tr = $('#f-trasl'); if (tr) F.trasladar = tr.checked;
 }
 // El pago pendiente de esa tarjeta, en esa moneda, en el mes del pago (para descontarle un adelanto)
 function pendienteDe(f){
@@ -1503,7 +1555,28 @@ function actualizarConv(){
     conv.hidden = !t.length;
   }
   const cu = $('#f-cuota'); if (cu) cu.textContent = isFinite(n) && F.cuotas > 1 ? `${fmtEn(n/F.cuotas, F.moneda)} por mes` : '';
+  if (F && F.tipo === 'pago') pintarTraslado();
   if (conv && F && F.tipo === 'ingreso' && $('#f-neto')?.checked && isFinite(n)){ conv.textContent = (conv.textContent ? conv.textContent + ' · ' : '') + `Total registrado: ${fmtEn(n + descEnMoneda(), F.moneda)}`; conv.hidden = false; }
+}
+// Pago de tarjeta por más o por menos que el resumen: el tilde para pasar la diferencia al mes siguiente
+function difPago(n){
+  const d = deudaAntesDelPago(F); if (!d || !isFinite(n) || n <= 0) return null;
+  const dif = Math.round((d.monto - n) * 100) / 100; // > 0 falta; < 0 de más
+  return Math.abs(dif) * tasaDe(F.moneda) >= 1 ? {dif, debe: d.monto} : null;
+}
+function pintarTraslado(){
+  const box = $('#f-tras'); if (!box || !F) return;
+  const n = parseNum($('#f-monto')?.value), d = difPago(n);
+  if (!d){ box.innerHTML = ''; return; }
+  const sig = MESES[+addMes(mesDe(F.fecha), 1).slice(5) - 1].toLowerCase(), tj = esc(nomTj(F.tarjeta));
+  const txt = d.debe <= 0.004
+    ? `No hay resumen pendiente de ${tj} este mes. Usar estos ${fmtEn(n, F.moneda)} como saldo a favor en el resumen de ${sig}`
+    : d.dif > 0
+      ? `Pagás menos que el resumen (${fmtEn(d.debe, F.moneda)}). Pasar lo que falta, ${fmtEn(d.dif, F.moneda)}, al resumen de ${sig}`
+      : `Pagás ${fmtEn(-d.dif, F.moneda)} más que el resumen (${fmtEn(d.debe, F.moneda)}). Descontar ese saldo a favor del resumen de ${sig}`;
+  const ya = !!box.querySelector('#f-trasl');
+  box.innerHTML = `<label class="check"><input type="checkbox" id="f-trasl" ${F.trasladar ? 'checked' : ''}> ${txt}</label>`;
+  if (!ya && !F.trasladar) box.querySelector('label').animate?.([{opacity:.4},{opacity:1}], {duration:250});
 }
 // Descuentos del ingreso del formulario, en su moneda (al editar, los que se guardaron ese mes)
 function descEnMoneda(){ const prev = F.id ? S.movs.find(m => m.id === F.id) : null; if (prev && prev.neto != null) return prev.descTotal ?? (prev.bhuDesc ? prev.bhuDesc / (prev.tasa || 1) : 0); return Math.round(totalDesc(F.ingDesc) / (tasaDe(F.moneda) || 1) * 100) / 100; }
@@ -1534,7 +1607,8 @@ async function enviarForm(){
   const conDesc = F.tipo === 'ingreso' && F.ingDesc && descuentosDe(F.ingDesc).length && F.inclDesc !== false && $('#f-neto');
   if (conDesc){ const d = descEnMoneda(); data.neto = monto; data.descTotal = d; data.monto = Math.round((monto + d) * 100) / 100; data.plantilla = F.ingDesc; }
   else if (F.tipo === 'ingreso' && prev && prev.neto != null && !$('#f-neto')){ data.neto = monto; data.descTotal = prev.descTotal ?? (prev.bhuDesc ? prev.bhuDesc / (prev.tasa || 1) : 0); data.monto = Math.round((monto + data.descTotal) * 100) / 100; }
-  const pendPago = !F.id && data.estado === 'pagado' && F.descontar !== false ? pendienteDe(F) : null;
+  if (F.tipo === 'pago'){ const tr = $('#f-trasl'), d = tr && tr.checked ? difPago(monto) : null; if (d) data.traslado = {monto: d.debe <= 0.004 ? -monto : d.dif, moneda: F.moneda}; }
+  const pendPago = !F.id && data.estado === 'pagado' && F.descontar !== false && !data.traslado ? pendienteDe(F) : null;
   const ok = await guardar(F.id, data);
   if (!ok) return;
   if (conDesc && data.estado === 'pagado') await asegurarDescuentos(F.ingDesc, mkF, data.fecha, data.concepto, data.cuenta);
@@ -1897,6 +1971,7 @@ document.addEventListener('click', async ev => {
   if (a === 'catcancel'){ K.borrar = false; abrirCat(null, true); return; }
   if (a === 'catborrar'){ await borrarCat(); return; }
   if (a === 'close'){ if (ev.target === t || t.tagName === 'BUTTON') cerrar(); return; }
+  if (a === 'mes-hoy'){ S.mes = hoyMes(); render(); window.scrollTo(0, 0); return; }
   if (a === 'mes'){ const n = addMes(S.mes, +t.dataset.d); if (n < primerMes()){ toast('No hay datos antes de ' + nombreMes(primerMes()).toLowerCase()); return; } S.mes = n; render(); return; }
   if (a === 'filtro'){ S.filtro = t.dataset.f; render(); return; }
   if (a === 'ir'){ S.filtro = t.dataset.filtro || 'todo'; S.q = ''; if (location.hash === '#movimientos') render(); else location.hash = '#movimientos'; window.scrollTo(0, 0); return; }
