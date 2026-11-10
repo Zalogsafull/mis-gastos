@@ -237,6 +237,8 @@ tbody tr:hover td{background:var(--raise)}
 .sem i.bien{background:var(--hero-ok)} .sem i.mal{background:var(--hero-mal)}
 .netoper{margin-left:auto;font-weight:600;font-size:15px;text-align:right}.netoper.pos{color:var(--good)}
 .rango{width:100%;accent-color:var(--accent);margin:6px 0 2px;height:28px}.rango-lbl{display:flex;justify-content:space-between;font-size:14px}
+.pto{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.libre{white-space:nowrap}.pto-libre{background:color-mix(in srgb,var(--bg) 25%,transparent)}
 .semtxt{display:block;margin-top:6px;font-size:12px;opacity:.85}
 .sem.encurso{outline:1.5px solid color-mix(in srgb,var(--bg) 70%,transparent);outline-offset:1.5px}
 .medios{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
@@ -1217,7 +1219,7 @@ function vInicio(){
     <div class="hoy num"><span class="label">Sin contar pendientes</span><span class="hv">${fmt(totCj)}</span>
       ${mk >= inicio() && (monCj.length > 1 || (monCj.length === 1 && !esPpal(monCj[0])) || hayCambio) ? `<div class="monedas">${(monCj.length ? monCj : [monP().id]).map(k => `<span>En ${esc(MON(k).nombre.toLowerCase())} <b>${fmtEn(cj[k]||0, k)}</b></span>`).join('')}${hayCambio ? '<button class="btn inv" data-act="cambio">Cambiar moneda</button>' : ''}</div>` : ''}</div>
     <div class="flow" aria-hidden="true"><i style="width:${w(r.salida+r.salP)}%;background:var(--c-extras)"></i><i style="width:${w(Math.max(0, r.ahorro+r.ahoP))}%;background:var(--c-ahorro)"></i></div>
-    <div class="sub num"><button type="button" class="lnk" data-act="ir" data-filtro="ingreso">Ingresos ${fmt(r.ing + r.ingP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="salidas">Salidas ${fmt(r.salida + r.salP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="mover">Ahorro ${fmt(r.ahorro + r.ahoP)}</button>${Math.abs(r.ext + r.extP) >= 1 ? `<button type="button" class="lnk" data-act="ir" data-filtro="mover">${r.ext + r.extP > 0 ? 'Depósitos' : 'Retiros'} ${fmt(Math.abs(r.ext + r.extP))}</button>` : ''}</div>
+    <div class="sub num"><button type="button" class="lnk" data-act="ir" data-filtro="ingreso">Ingresos ${fmt(r.ing + r.ingP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="salidas"><i class="pto" style="background:var(--c-extras)"></i>Salidas ${fmt(r.salida + r.salP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="mover"><i class="pto" style="background:var(--c-ahorro)"></i>Ahorro ${fmt(r.ahorro + r.ahoP)}</button>${(r.ing + r.ingP) - (r.salida + r.salP) - Math.max(0, r.ahorro + r.ahoP) >= 1 ? `<span class="libre"><i class="pto pto-libre"></i>Libre ${fmt((r.ing + r.ingP) - (r.salida + r.salP) - Math.max(0, r.ahorro + r.ahoP))}</span>` : ''}${Math.abs(r.ext + r.extP) >= 1 ? `<button type="button" class="lnk" data-act="ir" data-filtro="mover">${r.ext + r.extP > 0 ? 'Depósitos' : 'Retiros'} ${fmt(Math.abs(r.ext + r.extP))}</button>` : ''}</div>
   </section>
   <div class="grid4">
     ${catTiles}
