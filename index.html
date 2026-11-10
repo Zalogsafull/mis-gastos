@@ -382,7 +382,7 @@ const inicio = () => S.cfg.inicio || hoyMes();
 // Meses anteriores a la app: vienen de la planilla (colección planilla)
 const primerMes = () => { const ks = Object.keys(S.plan).sort(); return ks.length && ks[0] < inicio() ? ks[0] : inicio(); };
 // Para moverse entre meses: también el resumen anterior al primer mes, si hay compras con tarjeta que caen ahí
-const primerMesNav = () => { let pm = primerMes(); for (const m of S.movs) if (m.estado !== 'omitido' && m.tipo === 'gasto' && m.tarjeta){ const k = mesResumen(m); if (k && k < pm) pm = k; } return pm; };
+const primerMesNav = () => { let pm = primerMes(); for (const m of S.movs) if (!S.plan[mesResumen(m)] && m.estado !== 'omitido' && m.tipo === 'gasto' && m.tarjeta){ const k = mesResumen(m); if (k && k < pm) pm = k; } return pm; };
 
 // ---------- Utilidades ----------
 const $ = (s, el=document) => el.querySelector(s);
@@ -430,6 +430,7 @@ function mesPago(m){
 function mesResumen(m){
   if (m.mesResumen) return m.mesResumen;
   if (!isCard(m)) return mesDe(m.fecha);
+  if (m.plantilla) return mesDe(m.fecha); // un recurrente con tarjeta se cobra en el resumen del mes al que corresponde
   return addMes(mesPago(m), -1);
 }
 
@@ -476,7 +477,7 @@ function itemsDelMes(mk){
     const p = S.plan[mk];
     if (p && Array.isArray(p.items)) p.items.forEach((it, i) => { const m = planAMov(it, mk, i); out.push({m, uyu: toBase(m), cuota:0, cuotas:1, pl:true}); });
     // compras con tarjeta cargadas en la app que entran en un resumen anterior al primer mes (se pagan en el primer mes)
-    for (const m of S.movs){ if (m.estado === 'omitido' || !isCard(m)) continue; const n = Math.max(1, m.cuotas|0 || 1), i = difMes(mk, mesResumen(m)); if (i >= 0 && i < n) out.push({m, uyu: toBase(m)/n, cuota: n > 1 ? i+1 : 0, cuotas: n}); }
+    if (!p) for (const m of S.movs){ if (m.estado === 'omitido' || !isCard(m)) continue; const n = Math.max(1, m.cuotas|0 || 1), i = difMes(mk, mesResumen(m)); if (i >= 0 && i < n) out.push({m, uyu: toBase(m)/n, cuota: n > 1 ? i+1 : 0, cuotas: n}); }
     return out;
   }
   for (const m of S.movs){
@@ -573,6 +574,8 @@ function deudaAntesDelPago(f){
   const base = Object.entries(resto).reduce((a,[k,v]) => a + Math.max(0, v) * tasaDe(k), 0);
   return {monto: base / (tasaDe(f.moneda) || 1), moneda: f.moneda};
 }
+const claveEst = (mk, tid, mon) => `${mk}|${tid}|${mon}`;
+const estQuitado = (mk, tid, mon) => !!(S.cfg.estQuitados || {})[claveEst(mk, tid, mon)];
 function pendientes(mk){
   const list = [];
   if (mk < inicio()) return list;
@@ -584,14 +587,14 @@ function pendientes(mk){
     // El mes anterior viene de la planilla, donde las compras no siempre están separadas por tarjeta: lo pagado de más en una cubre a las otras
     const ests = idsTarjetas(mk).map(tid => { const pagos = pagosDe(tid).reduce((a,m) => a + toBase(m) + (m.traslado && +m.traslado.monto ? +m.traslado.monto * tasaDe(m.traslado.moneda) : 0), 0); return {tid, pagos, est: tarjetaDelMes(addMes(mk,-1), tid) - pagos}; });
     let sobra = ests.reduce((a,e) => a + Math.max(0, -e.est), 0); for (const e of ests) if (e.est > 0 && sobra > 0){ const q = Math.min(e.est, sobra); e.est -= q; sobra -= q; }
-    for (const e of ests) if (e.est > 1) list.push({kind:'est', tarjeta:e.tid, mon:monP().id, monto:e.est, uyu:e.est, parcial: e.pagos > 0});
+    for (const e of ests) if (e.est > 1 && !estQuitado(mk, e.tid, monP().id)) list.push({kind:'est', tarjeta:e.tid, mon:monP().id, monto:e.est, uyu:e.est, parcial: e.pagos > 0});
     return pendientesPersonas(mk, list);
   }
   // Pago de cada tarjeta separado por moneda: las cuotas del resumen anterior en esa moneda menos lo pagado en esa moneda.
   // Si pagaste de más en una moneda (ej. la parte en dólares pagada en pesos), cubre la otra con la cotización de hoy.
   for (const tid of new Set(idsTarjetas(mk).concat(S.movs.filter(m => m.tipo === 'pago' && m.traslado && mesDe(m.fecha) === addMes(mk,-1)).map(m => m.tarjeta)))){
     const {resto, pagos: ps} = restoTarjeta(mk, tid), entra = arrastre(addMes(mk,-1), tid);
-    for (const k of Object.keys(resto)) if (resto[k] * tasaDe(k) > 1) list.push({kind:'est', tarjeta:tid, mon:k, monto: Math.round(resto[k] * 100) / 100, uyu: resto[k] * tasaDe(k), parcial: ps.length > 0, entra: entra[k] || 0});
+    for (const k of Object.keys(resto)) if (resto[k] * tasaDe(k) > 1 && !estQuitado(mk, tid, k)) list.push({kind:'est', tarjeta:tid, mon:k, monto: Math.round(resto[k] * 100) / 100, uyu: resto[k] * tasaDe(k), parcial: ps.length > 0, entra: entra[k] || 0});
   }
   return pendientesPersonas(mk, list);
 }
@@ -1161,7 +1164,7 @@ function vInicio(){
   const okTxt = t => t === 'ingreso' ? 'Cobrado' : t === 'mover' ? 'Hecho' : 'Pagado';
   const pRow = p => {
     if (p.kind === 'per') return `<div class="prow"><div class="t" data-act="saldar" data-p-id="${p.persona}" data-dir="pague" data-v="${p.monto}">Pagarle a ${esc(nomPer(p.persona))}<small>Tu parte de lo que pagó ${esc(nomPer(p.persona))}, con las cuotas de este mes</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="saldar" data-p-id="${p.persona}" data-dir="pague" data-v="${p.monto}">Pagar</button><span></span></div>`;
-    if (p.kind === 'est') return `<div class="prow"><div class="t" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pago ${esc(nomTj(p.tarjeta))}${esPpal(p.mon) ? '' : ` en ${esc(MON(p.mon).nombre.toLowerCase())}`}<small>${p.parcial ? 'Lo que falta del resumen de ' : 'Estimado con las cuotas de '}${nombreMes(addMes(mk,-1)).toLowerCase()}${p.entra > 0.004 ? ` + ${fmtEn(p.entra, p.mon)} que pasaron del mes anterior` : p.entra < -0.004 ? ` − ${fmtEn(-p.entra, p.mon)} a favor del mes anterior` : ''}${esPpal(p.mon) ? '' : ` · ≈ ${fmt(p.uyu)}`}</small></div><span class="num">${fmtEn(p.monto, p.mon)}</span><button class="btn ok" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pagar</button><span></span></div>`;
+    if (p.kind === 'est') return `<div class="prow"><div class="t" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pago ${esc(nomTj(p.tarjeta))}${esPpal(p.mon) ? '' : ` en ${esc(MON(p.mon).nombre.toLowerCase())}`}<small>${p.parcial ? 'Lo que falta del resumen de ' : 'Estimado con las cuotas de '}${nombreMes(addMes(mk,-1)).toLowerCase()}${p.entra > 0.004 ? ` + ${fmtEn(p.entra, p.mon)} que pasaron del mes anterior` : p.entra < -0.004 ? ` − ${fmtEn(-p.entra, p.mon)} a favor del mes anterior` : ''}${esPpal(p.mon) ? '' : ` · ≈ ${fmt(p.uyu)}`}</small></div><span class="num">${fmtEn(p.monto, p.mon)}</span><button class="btn ok" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pagar</button><button class="btn ghost" data-act="estquitar" data-tj="${p.tarjeta}" data-mon="${p.mon}" aria-label="No corresponde: quitar este estimado">Quitar</button></div>`;
     if (p.kind === 'mov') return `<div class="prow"><div class="t" data-act="edit" data-id="${p.m.id}">${esc(p.m.concepto)}<small>${esc(etiqueta(p.m))}${!esPpal(p.m.moneda)?' · '+fmtM(p.m):''}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="pagar" data-id="${p.m.id}">${okTxt(p.m.tipo)}</button><span></span></div>`;
     const t = p.p;
     const sub = `${t.tipo==='gasto' ? (t.tarjeta ? nomTj(t.tarjeta) : nomCat(t.cat)) : t.tipo==='mover' ? `${nomCta(t.de)} → ${nomCta(t.a)}` : t.persona && PER(t.persona) ? 'Te lo paga ' + nomPer(t.persona) : 'Ingreso'} · ${t.tipo === 'ingreso' && descuentosDe(t.id).length && totalDesc(t.id, mk) >= 1 ? `neto ${fmtM(t)} + descuentos ${fmt(totalDesc(t.id, mk))}` : esPpal(t.moneda) ? 'monto habitual' : fmtM(t)}`;
@@ -1208,7 +1211,8 @@ function vInicio(){
   ${PERS().some(x => Math.abs(balancePersona(x.id)) >= 1) ? `<section class="panel"><h2>Gastos compartidos</h2><div class="list">${PERS().map(x => { const b = balancePersona(x.id); return Math.abs(b) < 1 ? '' : `<div class="row click" data-act="ir" data-filtro="persona:${x.id}"><div class="t">${b > 0 ? esc(x.nombre) + ' te debe' : 'Le debés a ' + esc(x.nombre)}</div><div class="m">todos los meses</div><div class="a num ${b > 0 ? 'pos' : ''}">${fmt(Math.abs(b))}</div></div>`; }).join('')}</div></section>` : ''}
   <div class="cols">
     <section class="panel"><h2>Pendientes <span>${pend.length ? fmt(porPagar) + ' por pagar' : ''}</span></h2>
-      <div class="list">${pend.length ? pend.map(pRow).join('') : `<p class="empty">No queda nada pendiente este mes.${S.plant.length ? '' : ' Agregá tus gastos recurrentes en Ajustes y van a aparecer acá cada mes.'}</p>`}</div></section>
+      <div class="list">${pend.length ? pend.map(pRow).join('') : `<p class="empty">No queda nada pendiente este mes.${S.plant.length ? '' : ' Agregá tus gastos recurrentes en Ajustes y van a aparecer acá cada mes.'}</p>`}</div>
+      ${(() => { const q = Object.keys(S.cfg.estQuitados || {}).filter(k => k.startsWith(mk + '|')).length; return q ? `<p class="note" style="margin:8px 0 0">${q === 1 ? 'Quitaste un pago estimado de tarjeta' : `Quitaste ${q} pagos estimados de tarjeta`} este mes. <button class="lnk" data-act="estvolver">Volver a mostrar</button></p>` : ''; })()}</section>
     <section class="panel"><h2>Movimientos <span><a href="#movimientos" style="color:var(--accent)">Ver todos</a></span></h2>
       <div class="list">${items.length ? items.slice(0,8).map(filaMov).join('') : '<p class="empty">Todavía no hay movimientos este mes. Tocá + para cargar el primero.</p>'}</div></section>
   </div>`;
@@ -1746,7 +1750,8 @@ function abrirHoja(re){
     <div class="two"><div class="field"><label for="f-fecha">Fecha</label><input class="inp" id="f-fecha" type="date" min="${primerMes()}-01" value="${F.fecha}"></div>
       <div class="field"><span class="label">Estado</span>${seg('f', 'estado', [['pagado', F.tipo==='ingreso'?'Cobrado':'Hecho'], ['pend','Pendiente']], F.estado === 'omitido' ? 'pagado' : F.estado)}</div></div>
     <div class="field"><label for="f-nota">Nota</label><input class="inp" id="f-nota" autocomplete="off" value="${esc(F.nota)}" placeholder="Opcional"></div>
-    <div class="actions">${F.id || F.plRef ? `<button type="button" class="btn danger" data-act="del">Borrar</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>
+    ${F.estRef && !F.id ? `<p class="note" style="margin:0">Es un pago estimado con las compras del resumen anterior. Si no corresponde (por ejemplo, ya pagaste todo), podés quitarlo.</p>` : ''}
+    <div class="actions">${F.id || F.plRef ? `<button type="button" class="btn danger" data-act="del">Borrar</button>` : ''}${F.estRef && !F.id ? `<button type="button" class="btn danger" data-act="estquitar" data-tj="${F.estRef.tid}" data-mon="${F.estRef.mon}">Quitar estimado</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>
   </form></div>`;
   actualizarConv();
   mostrarElegidos($('#sheet'));
@@ -2344,7 +2349,10 @@ document.addEventListener('click', async ev => {
     if (p.tipo === 'mover'){ abrirMover({de:b.de, monDe:b.moneda, a:b.a, monA:b.monA, montoTxt:dec(b.monto), fecha:b.fecha, plantilla:p.id, conceptoPlant:p.nombre}); return; }
     nuevoForm({...b, estado:'pagado', }); return;
   }
-  if (a === 'pagoest'){ const tid = t.dataset.tj, mon = t.dataset.mon || monP().id; const c = TJ(tid)?.cuentaPago; nuevoForm({tipo:'pago', tarjeta:tid, cuenta: c && monedasDe('c', c).includes(mon) ? c : (S.cfg.cuentas.find(x => x.tipo !== 'ahorro' && x.monedas.includes(mon)) || {}).id || c || cuentaDefecto(), moneda:mon, monto:+t.dataset.v}); return; }
+  if (a === 'estquitar'){ const q = {...(S.cfg.estQuitados || {})}; q[claveEst(S.mes, t.dataset.tj, t.dataset.mon || monP().id)] = true;
+    if (await guardarCfg({estQuitados: q})){ if (F) cerrar(); render(); toast(`Pago estimado de ${nomTj(t.dataset.tj)} quitado`); } return; }
+  if (a === 'estvolver'){ const q = {...(S.cfg.estQuitados || {})}; for (const k of Object.keys(q)) if (k.startsWith(S.mes + '|')) delete q[k]; if (await guardarCfg({estQuitados: q})){ render(); toast('Estimados visibles de nuevo'); } return; }
+  if (a === 'pagoest'){ const tid = t.dataset.tj, mon = t.dataset.mon || monP().id; const c = TJ(tid)?.cuentaPago; nuevoForm({tipo:'pago', tarjeta:tid, cuenta: c && monedasDe('c', c).includes(mon) ? c : (S.cfg.cuentas.find(x => x.tipo !== 'ahorro' && x.monedas.includes(mon)) || {}).id || c || cuentaDefecto(), moneda:mon, monto:+t.dataset.v, estRef:{tid, mon}}); return; }
   if (a === 'plantnew'){ abrirPlant(null); return; }
   if (a === 'plantedit'){ const p = S.plant.find(x => x.id === t.dataset.id); if (p) abrirPlant(p); return; }
   if (a === 'ctanew'){ abrirCuenta(null); return; }
