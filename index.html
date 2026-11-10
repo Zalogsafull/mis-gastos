@@ -382,7 +382,7 @@ const inicio = () => S.cfg.inicio || hoyMes();
 // Meses anteriores a la app: vienen de la planilla (colección planilla)
 const primerMes = () => { const ks = Object.keys(S.plan).sort(); return ks.length && ks[0] < inicio() ? ks[0] : inicio(); };
 // Para moverse entre meses: también el resumen anterior al primer mes, si hay compras con tarjeta que caen ahí
-const primerMesNav = () => { let pm = primerMes(); for (const m of S.movs) if (!S.plan[mesResumen(m)] && m.estado !== 'omitido' && m.tipo === 'gasto' && m.tarjeta){ const k = mesResumen(m); if (k && k < pm) pm = k; } return pm; };
+const primerMesNav = () => { let pm = primerMes(); for (const m of S.movs) if (!m.previo && !S.plan[mesResumen(m)] && m.estado !== 'omitido' && m.tipo === 'gasto' && m.tarjeta){ const k = mesResumen(m); if (k && k < pm) pm = k; } return pm; };
 
 // ---------- Utilidades ----------
 const $ = (s, el=document) => el.querySelector(s);
@@ -477,7 +477,7 @@ function itemsDelMes(mk){
     const p = S.plan[mk];
     if (p && Array.isArray(p.items)) p.items.forEach((it, i) => { const m = planAMov(it, mk, i); out.push({m, uyu: toBase(m), cuota:0, cuotas:1, pl:true}); });
     // compras con tarjeta cargadas en la app que entran en un resumen anterior al primer mes (se pagan en el primer mes)
-    if (!p) for (const m of S.movs){ if (m.estado === 'omitido' || !isCard(m)) continue; const n = Math.max(1, m.cuotas|0 || 1), i = difMes(mk, mesResumen(m)); if (i >= 0 && i < n) out.push({m, uyu: toBase(m)/n, cuota: n > 1 ? i+1 : 0, cuotas: n}); }
+    if (!p) for (const m of S.movs){ if (m.estado === 'omitido' || !isCard(m) || m.previo) continue; const n = Math.max(1, m.cuotas|0 || 1), i = difMes(mk, mesResumen(m)); if (i >= 0 && i < n) out.push({m, uyu: toBase(m)/n, cuota: n > 1 ? i+1 : 0, cuotas: n}); }
     return out;
   }
   for (const m of S.movs){
@@ -611,17 +611,19 @@ const nomPer = id => PER(id)?.nombre || 'Persona borrada';
 const pagoOtro = m => !!(m && m.split && m.split.pagador && m.split.pagador !== 'yo');
 // Lo que cada movimiento cambia en el balance con una persona (en moneda principal): + te debe, − le debés
 // Parte ya vencida de una compra en cuotas a un mes dado (1 si es en una sola)
-function devengado(m, hasta){
+function devengado(m, hasta, real){
   const n = Math.max(1, m.cuotas|0 || 1); if (n === 1) return 1;
   const ini = isCard(m) ? mesResumen(m) : mesDe(m.fecha);
-  return Math.max(0, Math.min(n, difMes(hasta || hoyMes(), ini) + 1)) / n;
+  const k = Math.max(0, Math.min(n, difMes(hasta || hoyMes(), ini) + 1));
+  const salteadas = m.previo && !real ? Math.max(0, Math.min(n, difMes(inicio(), ini))) : 0; // cuotas de antes de usar la app: ya estaban saldadas
+  return Math.max(0, k - salteadas) / n;
 }
-const cuotaActual = (m, hasta) => { const n = Math.max(1, m.cuotas|0 || 1); return Math.round(devengado(m, hasta) * n); };
+const cuotaActual = (m, hasta) => { const n = Math.max(1, m.cuotas|0 || 1); return Math.round(devengado(m, hasta, true) * n); };
 const conPersona = (m, pid) => !!m && m.estado !== 'omitido' && (m.saldo === pid || m.cargo === pid || !!(m.split && (m.split.con || []).includes(pid)));
 function efectoPersona(m, pid, hasta){
   if (!m || m.estado === 'omitido') return 0;
   // Ingreso que te paga una persona (ej. su parte del alquiler): si te lo pagó, queda a mano; si lo descontaste de lo que le debés, te lo debe
-  if (m.cargo === pid) return m.estado === 'pagado' && m.compensado ? toBase(m) : 0;
+  if (m.cargo === pid) return m.estado === 'pagado' && m.compensado ? (m.tipo === 'ingreso' ? toBase(m) : -toBase(m)) : 0;
   if (m.saldo === pid) return m.tipo === 'ingreso' ? -toBase(m) : toBase(m);
   const sp = m.split; if (!sp || !(sp.con || []).includes(pid)) return 0;
   const tot = toBase(m) * devengado(m, hasta), partes = sp.partes || {};
@@ -635,7 +637,7 @@ function pendientesPersonas(mk, list){ if (mk < hoyMes()) return list; for (cons
 const usaPersona = pid => S.plant.some(p => p.persona === pid) || S.movs.some(m => m.saldo === pid || m.cargo === pid || (m.split && ((m.split.con || []).includes(pid) || m.split.pagador === pid)));
 function sumar(r, m, v, pend){
   if (pagoOtro(m)) return; // lo pagó otra persona: no sale de tus cuentas
-  if (m.compensado) return; // descontado de lo que le debés a esa persona: no entra plata
+  if (m.compensado) return; // descontado del saldo con esa persona: no entra ni sale plata
   if (m.tipo === 'ingreso'){ pend ? r.ingP += v : r.ing += v; if (!esDia(m.cuenta)) pend ? r.ahoP += v : r.ahorro += v; }
   else if (m.tipo === 'mover'){
     // De "Otro lado" a una cuenta del día a día: es plata que tenés para el mes (no es ingreso ni ahorro). A una de ahorro no cambia el mes.
@@ -1134,7 +1136,7 @@ function filaMov(x){
   else if (isCard(m)) extra.push(`<span class="pill card">${esc(nomTj(m.tarjeta))}</span>`);
   if (m.estado === 'pend') extra.push(`<span class="pill pend">Pendiente</span>`);
   if (m.split && (m.split.con || []).length) extra.push(`<span class="pill est">${pagoOtro(m) ? 'Pagó ' + esc(nomPer(m.split.pagador)) : m.split.modo === 'prestado' ? 'Prestado a ' + esc(nomPer(m.split.con[0])) : 'Dividido con ' + esc(m.split.con.map(nomPer).join(', '))}</span>`);
-  if (m.cargo) extra.push(`<span class="pill est">${m.compensado ? 'Descontado con ' : 'Me pagó '}${esc(nomPer(m.cargo))}</span>`);
+  if (m.cargo) extra.push(`<span class="pill est">${m.compensado ? 'Descontado con ' : m.tipo === 'ingreso' ? 'Me pagó ' : 'Le pagué a '}${esc(nomPer(m.cargo))}</span>`);
   if (m.saldo) extra.push(`<span class="pill est">${m.tipo === 'ingreso' ? 'Me pagó ' : 'Le pagué a '}${esc(nomPer(m.saldo))}</span>`);
   const meta = [m.virtual === 'plant' ? 'monto habitual' : m.virtual ? 'este mes' : dia(m.fecha), etiqueta(m), isCard(m) ? '' : medioTxt(m), !esPpal(m.moneda) ? fmtM(m) + (x.cuotas>1?' total':'') : '', m.traslado && +m.traslado.monto ? (m.traslado.monto > 0 ? `pasan ${fmtEn(m.traslado.monto, m.traslado.moneda)} al mes siguiente` : `${fmtEn(-m.traslado.monto, m.traslado.moneda)} a favor para el mes siguiente`) : ''].filter(Boolean).join(' · ');
   return `<div class="row click" ${accionFila(x)}><div class="t">${esc(m.concepto || TIPOS[m.tipo] || '')}${extra.join('')}</div><div class="m">${esc(meta)}</div><div class="a num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</div></div>`;
@@ -1163,12 +1165,12 @@ function vInicio(){
   const tile = (lbl, v, col, sub, fl) => `<button type="button" class="tile tile-btn" data-act="ir" data-filtro="${fl}" aria-label="Ver movimientos de ${esc(lbl)}"><span class="label"><i class="dot" style="background:${col.startsWith('--') ? `var(${col})` : col}"></i>${esc(lbl)}<span class="ir" aria-hidden="true">›</span></span><span class="v num">${fmt(v)}</span>${sub?`<span class="note num">${sub}</span>`:''}</button>`;
   const okTxt = t => t === 'ingreso' ? 'Cobrado' : t === 'mover' ? 'Hecho' : 'Pagado';
   const pRow = p => {
-    if (p.kind === 'per') return `<div class="prow"><div class="t" data-act="saldar" data-p-id="${p.persona}" data-dir="pague" data-v="${p.monto}">Pagarle a ${esc(nomPer(p.persona))}<small>Tu parte de lo que pagó ${esc(nomPer(p.persona))}, con las cuotas de este mes</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="saldar" data-p-id="${p.persona}" data-dir="pague" data-v="${p.monto}">Pagar</button><span></span></div>`;
+    if (p.kind === 'per') return `<div class="prow"><div class="t" data-act="saldar" data-p-id="${p.persona}" data-dir="pague" data-v="${p.monto}">Pagarle a ${esc(nomPer(p.persona))}<small>Lo que le debés hasta este mes: gastos que pagó, cuotas y lo descontado</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="saldar" data-p-id="${p.persona}" data-dir="pague" data-v="${p.monto}">Pagar</button><span></span></div>`;
     if (p.kind === 'est') return `<div class="prow"><div class="t" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pago ${esc(nomTj(p.tarjeta))}${esPpal(p.mon) ? '' : ` en ${esc(MON(p.mon).nombre.toLowerCase())}`}<small>${p.parcial ? 'Lo que falta del resumen de ' : 'Estimado con las cuotas de '}${nombreMes(addMes(mk,-1)).toLowerCase()}${p.entra > 0.004 ? ` + ${fmtEn(p.entra, p.mon)} que pasaron del mes anterior` : p.entra < -0.004 ? ` − ${fmtEn(-p.entra, p.mon)} a favor del mes anterior` : ''}${esPpal(p.mon) ? '' : ` · ≈ ${fmt(p.uyu)}`}</small></div><span class="num">${fmtEn(p.monto, p.mon)}</span><button class="btn ok" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pagar</button><button class="btn ghost" data-act="estquitar" data-tj="${p.tarjeta}" data-mon="${p.mon}" aria-label="No corresponde: quitar este estimado">Quitar</button></div>`;
     if (p.kind === 'mov') return `<div class="prow"><div class="t" data-act="edit" data-id="${p.m.id}">${esc(p.m.concepto)}<small>${esc(etiqueta(p.m))}${!esPpal(p.m.moneda)?' · '+fmtM(p.m):''}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="pagar" data-id="${p.m.id}">${okTxt(p.m.tipo)}</button><span></span></div>`;
     const t = p.p;
-    const sub = `${t.tipo==='gasto' ? (t.tarjeta ? nomTj(t.tarjeta) : nomCat(t.cat)) : t.tipo==='mover' ? `${nomCta(t.de)} → ${nomCta(t.a)}` : t.persona && PER(t.persona) ? 'Te lo paga ' + nomPer(t.persona) : 'Ingreso'} · ${t.tipo === 'ingreso' && descuentosDe(t.id).length && totalDesc(t.id, mk) >= 1 ? `neto ${fmtM(t)} + descuentos ${fmt(totalDesc(t.id, mk))}` : esPpal(t.moneda) ? 'monto habitual' : fmtM(t)}`;
-    return `<div class="prow"><div class="t" data-act="plantform" data-id="${t.id}">${esc(t.nombre)}<small>${esc(sub)}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="${t.tipo === 'ingreso' && (descuentosDe(t.id).length || (t.persona && PER(t.persona))) ? 'plantform' : 'plantok'}" data-id="${t.id}">${okTxt(t.tipo)}</button><button class="btn ghost" data-act="plantskip" data-id="${t.id}" aria-label="No aplica este mes">Omitir</button></div>`;
+    const sub = `${t.tipo==='gasto' ? (t.tarjeta ? nomTj(t.tarjeta) : nomCat(t.cat)) + (t.persona && PER(t.persona) ? ' · a ' + nomPer(t.persona) : '') : t.tipo==='mover' ? `${nomCta(t.de)} → ${nomCta(t.a)}` : t.persona && PER(t.persona) ? 'Te lo paga ' + nomPer(t.persona) : 'Ingreso'} · ${t.tipo === 'ingreso' && descuentosDe(t.id).length && totalDesc(t.id, mk) >= 1 ? `neto ${fmtM(t)} + descuentos ${fmt(totalDesc(t.id, mk))}` : esPpal(t.moneda) ? 'monto habitual' : fmtM(t)}`;
+    return `<div class="prow"><div class="t" data-act="plantform" data-id="${t.id}">${esc(t.nombre)}<small>${esc(sub)}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="${(t.tipo === 'ingreso' && descuentosDe(t.id).length) || (t.persona && PER(t.persona) && t.tipo !== 'mover') ? 'plantform' : 'plantok'}" data-id="${t.id}">${okTxt(t.tipo)}</button><button class="btn ghost" data-act="plantskip" data-id="${t.id}" aria-label="No aplica este mes">Omitir</button></div>`;
   };
   const orden = {ingreso:0, gasto:1, pago:2, mover:3};
   const tipoDe = p => p.kind === 'est' ? 'pago' : p.kind === 'per' ? 'gasto' : (p.m || p.p).tipo;
@@ -1284,7 +1286,7 @@ function vPersona(pid){
   const lista = S.movs.filter(m => conPersona(m, pid)).sort((a,b) => (b.fecha||'').localeCompare(a.fecha||'') || (b.creado||0)-(a.creado||0));
   const total = m => efectoPersona(m, pid, '9999-12');
   const futuro = lista.reduce((a, m) => a + (total(m) - efectoPersona(m, pid)), 0);
-  const ef = m => { const v = efectoPersona(m, pid), t = total(m); if (m.cargo === pid) return m.compensado ? `Descontado de lo que le debés` : `${nom} te pagó`; if (m.saldo === pid) return m.tipo === 'ingreso' ? `${nom} te pagó` : `Le pagaste a ${nom}`;
+  const ef = m => { const v = efectoPersona(m, pid), t = total(m); if (m.cargo === pid) return m.compensado ? (m.tipo === 'ingreso' ? 'A tu favor (descontado)' : `A favor de ${nom} (descontado)`) : m.tipo === 'ingreso' ? `${nom} te pagó` : `Le pagaste a ${nom}`; if (m.saldo === pid) return m.tipo === 'ingreso' ? `${nom} te pagó` : `Le pagaste a ${nom}`;
     const txt = t > 0 ? `${nom} te debe ${fmt(Math.abs(v))}` : `Le debés ${fmt(Math.abs(v))}`; return Math.abs(t - v) >= 1 ? `${txt} de ${fmt(Math.abs(t))}` : txt; };
   const cuotasTxt = m => { const n = Math.max(1, m.cuotas|0 || 1); if (n === 1 || m.saldo === pid) return ''; const k = cuotaActual(m); return k <= 0 ? ` · ${n} cuotas, empieza ${nombreMes(isCard(m) ? mesResumen(m) : mesDe(m.fecha)).toLowerCase()}` : k >= n ? ` · ${n} cuotas, todas vencidas` : ` · cuota ${k} de ${n}`; };
   return `
@@ -1296,7 +1298,7 @@ function vPersona(pid){
     <div class="chips"><button class="btn inv" data-act="saldar" data-p-id="${pid}" data-dir="recibi" data-v="${bal > 0 ? Math.round(bal) : ''}">${nom} me pagó</button><button class="btn inv" data-act="saldar" data-p-id="${pid}" data-dir="pague" data-v="${bal < 0 ? Math.round(-bal) : ''}">Le pagué a ${nom}</button></div>
   </section>
   <section class="panel"><h2>Movimientos <span>${lista.length}</span></h2>
-    <div class="list">${lista.length ? lista.map(m => `<div class="row click" data-act="edit" data-id="${m.id}"><div class="t">${esc(m.concepto || '')}</div><div class="m">${dia(m.fecha)} ${m.fecha.slice(0,4)} · ${m.saldo === pid ? esc(TIPOS[m.tipo] || '') : m.cargo === pid ? 'ingreso de todos los meses' : pagoOtro(m) ? 'pagó ' + esc(nomPer(m.split.pagador)) : 'pagaste vos'} · total ${fmt(toBase(m))}${esc(cuotasTxt(m))}</div><div class="a num ${efectoPersona(m, pid) > 0 ? 'pos' : ''}">${esc(ef(m))}</div></div>`).join('') : `<p class="empty">Todavía no hay gastos divididos con ${nom}. Al cargar un gasto, elegí "Dividido con ${nom}".</p>`}</div></section>
+    <div class="list">${lista.length ? lista.map(m => `<div class="row click" data-act="edit" data-id="${m.id}"><div class="t">${esc(m.concepto || '')}</div><div class="m">${dia(m.fecha)} ${m.fecha.slice(0,4)} · ${m.saldo === pid ? esc(TIPOS[m.tipo] || '') : m.cargo === pid ? (m.tipo === 'ingreso' ? 'ingreso de todos los meses' : 'gasto de todos los meses') : pagoOtro(m) ? 'pagó ' + esc(nomPer(m.split.pagador)) : 'pagaste vos'} · total ${fmt(toBase(m))}${esc(cuotasTxt(m))}</div><div class="a num ${efectoPersona(m, pid) > 0 ? 'pos' : ''}">${esc(ef(m))}</div></div>`).join('') : `<p class="empty">Todavía no hay gastos divididos con ${nom}. Al cargar un gasto, elegí "Dividido con ${nom}".</p>`}</div></section>
   <p class="note">Si pagaste vos, el gasto sale entero de tu cuenta y ${nom} te debe su parte. Si pagó ${nom}, no toca tus cuentas: cada mes aparece en Pendientes "Pagarle a ${nom}" con tu parte (cuotas incluidas), y cuando le pagás cuenta como tu gasto. Si se lo prestaste (por ejemplo, tu tarjeta), ${nom} te devuelve todo. "${nom} me pagó" entra como ingreso. Un ingreso de todos los meses que te paga ${nom} (por ejemplo, su parte del alquiler) se puede descontar de lo que le debés en vez de cobrarlo.</p>`;
 }
 function vMovs(){
@@ -1712,12 +1714,12 @@ function abrirHoja(re){
   const ctas = S.cfg.cuentas.map(c => [c.id, c.nombre]);
   const tjs = S.cfg.tarjetas.map(x => [x.id, x.nombre]);
   let medio = '';
-  if (F.tipo === 'gasto' && pagoOtro(F)) medio = `<p class="note" style="margin:0">Lo pagó ${esc(nomPer(F.split.pagador))}: no sale de tus cuentas, queda como deuda tuya por tu parte.</p>`;
+  if (F.cargo && F.compensado && (F.tipo === 'gasto' || F.tipo === 'ingreso')) medio = '';
+  else if (F.tipo === 'gasto' && pagoOtro(F)) medio = `<p class="note" style="margin:0">Lo pagó ${esc(nomPer(F.split.pagador))}: no sale de tus cuentas, queda como deuda tuya por tu parte.</p>`;
   else if (F.tipo === 'gasto'){
     const opts = porUso(ctas.map(([id, n]) => ['c:' + id, n]).concat(tjs.map(([id, n]) => ['t:' + id, n])), usoMedio()), val = F.tarjeta ? 't:' + F.tarjeta : 'c:' + F.cuenta;
     medio = `<div class="field"><span class="label">Pagado con</span><div class="chips fila">${opts.map(([v, l]) => `<button type="button" class="chip${v.startsWith('t:') ? ' tj' : ''}" data-f="medio" data-v="${esc(v)}" aria-pressed="${val === v}"${v.startsWith('t:') ? ' title="Tarjeta de crédito"' : ''}>${esc(l)}</button>`).join('')}</div></div>`;
   }
-  else if (F.tipo === 'ingreso' && F.cargo && F.compensado) medio = '';
   else if (F.tipo === 'ingreso') medio = `<div class="field"><span class="label">Entra en</span>${chipsDe('f', 'cuenta', ctas, F.cuenta)}</div>`;
   else if (F.tipo === 'pago') medio = tjs.length ? `<div class="field"><span class="label">Tarjeta</span>${chipsDe('f', 'tarjeta', tjs, F.tarjeta)}</div>
       <div class="field"><span class="label">Se paga desde</span>${chipsDe('f', 'cuenta', ctas, F.cuenta)}</div>
@@ -1733,7 +1735,10 @@ function abrirHoja(re){
     ${F.tipo==='gasto' ? `<div class="field"><span class="label">Categoría</span>${chipsFila('f', 'cat', porUso(CATS().map(c => [c.id, c.nombre]), usoCat()), F.cat)}</div>` : ''}
     ${F.tipo === 'pago' ? '' : `<div class="field"><label for="f-concepto">${F.tipo==='gasto'?'Dónde / en qué':'Concepto'}</label><input class="inp" id="f-concepto" autocomplete="off" value="${esc(F.concepto)}" placeholder="${F.tipo==='gasto'?(F.cat==='Súper'?'Supermercado, feria…':'Farmacia, taxi…'):'Sueldo, aguinaldo…'}">
       ${sug.length ? chipsDe('f', 'concepto', sug.map(s => [s,s]), F.concepto) : ''}</div>`}
-    ${F.tipo === 'gasto' && PERS().length && !F.plRef ? bloqueDividir() : ''}
+    ${F.tipo === 'gasto' && PERS().length && !F.plRef && !F.cargo ? bloqueDividir() : ''}
+    ${F.tipo === 'gasto' && F.cargo && PER(F.cargo) ? (() => { const tedebe = balancePersona(F.cargo, '9999-12') - (F.id ? efectoPersona(S.movs.find(m => m.id === F.id), F.cargo, '9999-12') : 0), nom = esc(nomPer(F.cargo));
+      return `<p class="note" style="margin:0">Se lo pagás a ${nom}: aparece en sus movimientos.</p>${F.tarjeta ? '' : `<label class="check"><input type="checkbox" id="f-compensa" ${F.compensado ? 'checked' : ''}> No se lo pagué: lo descuento de lo que me debe ${nom}${tedebe >= 1 ? ` (hoy te debe ${fmt(tedebe)})` : ''}</label>
+      <p class="note" style="margin:-4px 0 0">${F.compensado ? `No sale plata de tu cuenta: baja lo que ${nom} te debe${tedebe < (parseNum(F.montoTxt) || 0) * tasaDe(F.moneda) - 1 ? ' y la diferencia queda como que le debés' : ''}.` : `Se lo pagaste: sale de tu cuenta y quedan a mano por este monto.`}</p>`}`; })() : ''}
     ${F.tipo === 'ingreso' && F.cargo && PER(F.cargo) ? (() => { const deb = -(balancePersona(F.cargo, '9999-12') - (F.id ? efectoPersona(S.movs.find(m => m.id === F.id), F.cargo, '9999-12') : 0)), nom = esc(nomPer(F.cargo));
       return `<label class="check"><input type="checkbox" id="f-compensa" ${F.compensado ? 'checked' : ''}> ${nom} no me lo pagó: lo descuento de lo que le debo${deb >= 1 ? ` (hoy le debés ${fmt(deb)})` : ''}</label>
       <p class="note" style="margin:-4px 0 0">${F.compensado ? `No entra plata a tu cuenta: baja lo que le debés a ${nom}${deb >= 1 && deb < (parseNum(F.montoTxt) || 0) * tasaDe(F.moneda) - 1 ? ' y la diferencia queda como que te debe' : ''}.` : `Te lo pagó: entra a tu cuenta y queda a mano con ${nom} por este monto.`}</p>`; })() : ''}
@@ -1747,7 +1752,9 @@ function abrirHoja(re){
     ${F.tipo === 'gasto' && pagoOtro(F) && !F.plRef ? `<div class="field"><span class="label">Cuotas (las paga ${esc(nomPer(F.split.pagador))})</span><div class="stepper"><button type="button" class="iconbtn" data-act="cuota" data-d="-1" aria-label="Menos cuotas">−</button><span class="num">${F.cuotas}</span><button type="button" class="iconbtn" data-act="cuota" data-d="1" aria-label="Más cuotas">+</button></div><span class="note num" id="f-cuota"></span></div>` : ''}
     ${card && !F.plRef ? `<div class="two"><div class="field"><span class="label">Cuotas</span><div class="stepper"><button type="button" class="iconbtn" data-act="cuota" data-d="-1" aria-label="Menos cuotas">−</button><span class="num">${F.cuotas}</span><button type="button" class="iconbtn" data-act="cuota" data-d="1" aria-label="Más cuotas">+</button></div><span class="note num" id="f-cuota"></span></div>
       <div class="field"><span class="label">Se paga en</span><div class="stepper"><button type="button" class="iconbtn" data-act="res" data-d="-1" aria-label="Un mes antes">${chev('M15 18l-6-6 6-6')}</button><span class="num" style="min-width:5.5em">${corto(addMes(F.mesResumen,1))}</span><button type="button" class="iconbtn" data-act="res" data-d="1" aria-label="Un mes después">${chev('M9 18l6-6-6-6')}</button></div><span class="note">${t && t.cierre ? `Cierra el ${t.cierre}${t.vence ? ` · vence el ${t.vence}` : ''}` : 'Sin día de cierre'}</span></div></div>` : ''}
-    <div class="two"><div class="field"><label for="f-fecha">Fecha</label><input class="inp" id="f-fecha" type="date" min="${primerMes()}-01" value="${F.fecha}"></div>
+    ${esPrevio() ? (() => { const n = F.cuotas|0, ini = card ? F.mesResumen : mesDe(F.fecha), sk = Math.max(0, Math.min(n, difMes(inicio(), ini))), resta = n - sk;
+      return `<p class="note" style="margin:0">Compra anterior a ${nombreMes(inicio()).toLowerCase()}, cuando empezaste a usar la app: ${resta > 0 ? `cuentan las ${resta === 1 ? 'última cuota' : `últimas ${resta} cuotas`} (de la ${sk + 1} a la ${n})${card ? `, que se pagan desde ${nombreMes(addMes(ini, sk + 1)).toLowerCase()}` : ''}. Las anteriores se dan por pagadas.` : 'todas las cuotas ya se pagaron antes, no suma nada.'}</p>`; })() : (F.tipo === 'gasto' && mesDe(F.fecha) < inicio() && !F.plRef ? `<p class="note" style="margin:0">Es anterior a ${nombreMes(inicio()).toLowerCase()}, cuando empezaste a usar la app. Si es una compra en cuotas con tarjeta (o la pagó otra persona en cuotas), poné las cuotas y solo cuentan las que faltan.</p>` : '')}
+    <div class="two"><div class="field"><label for="f-fecha">Fecha</label><input class="inp" id="f-fecha" type="date" value="${F.fecha}"></div>
       <div class="field"><span class="label">Estado</span>${seg('f', 'estado', [['pagado', F.tipo==='ingreso'?'Cobrado':'Hecho'], ['pend','Pendiente']], F.estado === 'omitido' ? 'pagado' : F.estado)}</div></div>
     <div class="field"><label for="f-nota">Nota</label><input class="inp" id="f-nota" autocomplete="off" value="${esc(F.nota)}" placeholder="Opcional"></div>
     ${F.estRef && !F.id ? `<p class="note" style="margin:0">Es un pago estimado con las compras del resumen anterior. Si no corresponde (por ejemplo, ya pagaste todo), podés quitarlo.</p>` : ''}
@@ -1837,6 +1844,7 @@ function pintarTraslado(){
 }
 // Descuentos del ingreso del formulario, en su moneda (al editar, los que se guardaron ese mes)
 function descEnMoneda(){ const prev = F.id ? S.movs.find(m => m.id === F.id) : null; if (prev && prev.neto != null) return prev.descTotal ?? (prev.bhuDesc ? prev.bhuDesc / (prev.tasa || 1) : 0); return Math.round(totalDesc(F.ingDesc, mesDe(F.fecha)) / (tasaDe(F.moneda) || 1) * 100) / 100; }
+function esPrevio(f){ f = f || F; return !!f && !f.plRef && f.tipo === 'gasto' && (f.cuotas|0) > 1 && !!f.fecha && mesDe(f.fecha) < inicio() && (!!f.tarjeta || pagoOtro(f)); }
 async function enviarForm(){
   leerForm();
   const monto = parseNum(F.montoTxt);
@@ -1861,11 +1869,13 @@ async function enviarForm(){
     if (data.split.pagador !== 'yo'){ data.cuenta = null; data.tarjeta = null; data.cuotas = Math.max(1, F.cuotas|0 || 1); delete data.mesResumen; }
   }
   if (F.saldo) data.saldo = F.saldo;
-  if (F.tipo === 'ingreso' && F.cargo){ data.cargo = F.cargo; if (F.compensado) data.compensado = true; }
+  if ((F.tipo === 'ingreso' || F.tipo === 'gasto') && F.cargo){ data.cargo = F.cargo; if (F.compensado && !(F.tipo === 'gasto' && F.tarjeta)) data.compensado = true; }
   if (F.tipo === 'pago') data.concepto = 'Pago ' + nomTj(F.tarjeta);
   if (prev?.origen) data.origen = prev.origen;
   const mkF = mesDe(F.fecha);
-  if (F.plRef || mkF < inicio()){ // meses de la planilla
+  const previo = esPrevio();
+  if (previo) data.previo = true; // compra en cuotas de antes de usar la app: solo cuentan las cuotas desde el primer mes
+  if (F.plRef || (mkF < inicio() && !previo)){ // meses de la planilla
     if (F.plRef && mkF !== F.plRef.mk){ toast('Para pasarlo a otro mes, borralo y cargalo de nuevo en ese mes'); return; }
     const old = F.plRef ? S.plan[F.plRef.mk]?.items?.[F.plRef.idx] : null;
     if (await guardarEnPlanilla(mkF, F.plRef ? F.plRef.idx : null, movAPlan(data, old))){ const ed = !!F.plRef; cerrar(); toast(ed ? 'Cambios guardados' : 'Movimiento guardado'); }
@@ -2039,7 +2049,9 @@ function abrirPlant(p, re){
     ${seg('p', 'tipo', [['gasto','Gasto'],['ingreso','Ingreso'],['mover','Ahorro / transferencia']], P.tipo)}
     ${P.tipo==='gasto' ? `<div class="field"><span class="label">Categoría</span>${chipsFila('p', 'cat', porUso(CATS().map(c => [c.id, c.nombre]), usoCat()), P.cat)}</div>
     <div class="field"><span class="label">Subcategoría de recurrentes</span>${chipsDe('p', 'sub', SUBS().map(x => [x.id, x.nombre]).concat([['', 'Ninguna']]), P.sub || '')}</div>
-      <div class="field"><span class="label">Se paga con</span><div class="medios"><span class="note">Cuenta</span>${chipsDe('p', 'medio', ctas.map(([id,n]) => ['c:'+id, n]), P.tarjeta ? '' : 'c:'+P.cuenta)}${tjs.length ? `<span class="note">Crédito</span>${chipsDe('p', 'medio', tjs.map(([id,n]) => ['t:'+id, n]), P.tarjeta ? 't:'+P.tarjeta : '')}` : ''}</div></div>` : ''}
+      <div class="field"><span class="label">Se paga con</span><div class="medios"><span class="note">Cuenta</span>${chipsDe('p', 'medio', ctas.map(([id,n]) => ['c:'+id, n]), P.tarjeta ? '' : 'c:'+P.cuenta)}${tjs.length ? `<span class="note">Crédito</span>${chipsDe('p', 'medio', tjs.map(([id,n]) => ['t:'+id, n]), P.tarjeta ? 't:'+P.tarjeta : '')}` : ''}</div></div>
+      ${PERS().length ? `<div class="field"><span class="label">¿A quién se lo pagás?</span>${chipsDe('p', 'persona', [['', 'A nadie en particular']].concat(PERS().map(x => [x.id, x.nombre])), P.persona || '')}
+        ${P.persona ? `<p class="note" style="margin:0">Aparece en los movimientos de ${esc(nomPer(P.persona))}. Cada mes, al marcarlo, elegís si se lo pagaste o si lo descontás de lo que te debe.</p>` : ''}</div>` : ''}` : ''}
     ${P.tipo==='gasto' ? (() => { const ings = S.plant.filter(x => x.tipo === 'ingreso' && x.id !== P.id);
       return `<div class="field"><span class="label">¿Te lo descuentan de un ingreso?</span>${ings.length ? chipsDe('p', 'descuentaDe', [['', 'No']].concat(ings.map(x => [x.id, 'Sí, de ' + x.nombre])), P.descuentaDe || '') : ''}
         <p class="note" style="margin:0">${ings.length ? 'Para lo que te descuentan del sueldo (un préstamo, una cuota, un aporte). Al cobrar ese ingreso por el neto, la app le suma este monto y lo marca como pagado.' : 'Si te lo descuentan del sueldo, agregá primero el sueldo como ingreso de todos los meses y después marcalo acá.'}</p></div>`; })() : ''}
@@ -2063,7 +2075,7 @@ async function enviarPlant(){
   const data = {nombre:P.nombre, tipo:P.tipo, monto, moneda:P.moneda, activa:P.activa!==false, orden:P.orden||99};
   if (P.id){ if (P.desde) data.desde = P.desde; } else data.desde = S.mes && S.mes < hoyMes() ? S.mes : hoyMes();
   if (P.tipo === 'mover' && P.modo) data.modo = P.modo;
-  if (P.tipo === 'gasto'){ data.sub = SUB(P.sub) ? P.sub : null; data.cat = P.cat || 'Fijos'; data.tarjeta = P.tarjeta || null; data.cuenta = P.tarjeta ? null : P.cuenta; data.descuentaDe = P.descuentaDe && S.plant.some(x => x.id === P.descuentaDe) ? P.descuentaDe : null; }
+  if (P.tipo === 'gasto'){ data.sub = SUB(P.sub) ? P.sub : null; data.cat = P.cat || 'Fijos'; data.tarjeta = P.tarjeta || null; data.cuenta = P.tarjeta ? null : P.cuenta; data.descuentaDe = P.descuentaDe && S.plant.some(x => x.id === P.descuentaDe) ? P.descuentaDe : null; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
   else if (P.tipo === 'ingreso'){ data.cuenta = P.cuenta; if (P.bhu) data.bhu = true; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
   else { data.de = P.de; data.a = P.a; const ma = monedasDe('c', P.a); data.monA = ma.includes(P.moneda) ? P.moneda : (ma.includes(monP().id) ? monP().id : ma[0]); }
   if (!S.db){ toast('Sin conexión con la base de datos'); return; }
@@ -2079,7 +2091,7 @@ function movDesdePlant(p, estado, mk){
     tasa: tasaDe(p.moneda) || 1, cuenta: p.cuenta || null, tarjeta: p.tarjeta || null, cuotas:1, estado, nota:'', plantilla:p.id, creado:Date.now()};
   if (p.tipo === 'mover'){ o.modo = p.modo || 'mover'; o.de = p.de; o.a = p.a; o.monA = p.monA || p.moneda; o.montoA = Math.round(convierte(monto, p.moneda, o.monA) * 100) / 100; o.cuenta = null; }
   if (p.tarjeta) o.mesResumen = mk;
-  if (p.tipo === 'ingreso' && p.persona) o.cargo = p.persona;
+  if ((p.tipo === 'ingreso' || p.tipo === 'gasto') && p.persona && PER(p.persona)) o.cargo = p.persona;
   if (p.tipo === 'ingreso' && estado !== 'omitido'){ const d = totalDesc(p.id, mk); if (d > 0){ o.neto = monto; o.descTotal = Math.round(d / (tasaDe(p.moneda) || 1) * 100) / 100; o.monto = monto + o.descTotal; } }
   return o;
 }
