@@ -1286,13 +1286,13 @@ function barraSemanas(mk, saldoFin){
   const tramos = [0, 1, 2, 3].map(k => {
     const d1 = cortes[k] + 1, d2 = cortes[k+1], largo = d2 - d1 + 1;
     if (diaHoy < d1){ estados.push('sin empezar'); return `<span class="sem"></span>`; }
-    // Cada semana arranca con su parte de lo que queda del presupuesto (lo gastado de más o de menos antes se reparte en lo que falta)
-    const queda = Math.max(0, B - suma(1, d1 - 1)), semB = queda * largo / (dias - d1 + 1);
+    // Cada semana es independiente: su parte fija del presupuesto del mes, según los días que tiene
+    const semB = B * largo / dias;
     const hasta = Math.min(d2, diaHoy), gastado = suma(d1, hasta), terminada = hasta === d2;
-    // Mientras corre, se compara con lo que correspondía gastar hasta hoy; al terminar, con el total de la semana
-    const tope = terminada ? semB : semB * (hasta - d1 + 1) / largo, bien = gastado <= tope + 1;
+    // Arranca en verde y pasa a rojo cuando lo gastado en la semana supera su presupuesto; al cerrar queda con el resultado final
+    const tope = semB, bien = gastado <= tope + 1;
     estados.push(`${bien ? 'bien' : 'pasada'}: ${fmt(gastado)} de ${fmt(semB)}`);
-    if (!terminada) txt = `Semana ${k+1}: llevás ${fmt(gastado)} de ${fmt(semB)} · a hoy, ${fmt(tope)}`;
+    if (!terminada) txt = `Semana ${k+1}: llevás ${fmt(gastado)} de ${fmt(semB)}${gastado <= semB ? ` · te quedan ${fmt(semB - gastado)}` : ` · te pasaste ${fmt(gastado - semB)}`}`;
     const pct = ((hasta - d1 + 1) / largo * 100).toFixed(1);
     return `<span class="sem${terminada ? '' : ' encurso'}"><i class="${bien ? 'bien' : 'mal'}" style="width:${pct}%"></i></span>`;
   });
@@ -1633,7 +1633,7 @@ function vAjustes(){
     <p class="note">Agrupan tus gastos recurrentes en la gráfica de Análisis. A cada gasto recurrente le elegís su subcategoría en la lista de arriba.</p></section>
   <section class="panel"><h2>Presupuesto del día a día</h2>
     <div class="filters"><div class="field" style="flex:1;min-width:0"><label for="c-pres">Súper, comida, salud, ropa y extras por mes (${esc(monLbl(monP().id))})</label><input class="inp" id="c-pres" inputmode="decimal" value="${dec(c.presupuesto || 0)}"></div><button class="btn primary" data-act="pres" style="align-self:flex-end">Guardar</button></div>
-    <p class="note">Es lo que calculás gastar en lo que no está cargado como recurrente. Se ve como una barra de cuatro semanas debajo de lo que te queda en el mes: cada semana tiene su parte de lo que queda del presupuesto. La semana en curso se pinta día a día: verde si vas dentro de lo que correspondía gastar hasta hoy, rojo si te pasaste. Al terminar queda verde o roja según cómo cerró, y la siguiente arranca con lo que quedó. Las compras con tarjeta de crédito no cuentan acá. Con 0 se oculta la barra.</p></section>
+    <p class="note">Es lo que calculás gastar en lo que no está cargado como recurrente. Se ve como una barra de cuatro semanas debajo de lo que te queda en el mes: cada semana tiene su parte fija del presupuesto y se mide sola. La semana en curso arranca en verde y se pinta día a día; pasa a rojo si lo gastado supera el presupuesto de la semana. Al terminar queda verde o roja según cómo cerró. Si corregís un gasto, el color se corrige. Las compras con tarjeta de crédito no cuentan acá. Con 0 se oculta la barra.</p></section>
   <section class="panel"><h2>Capital</h2>
     <div class="field"><span class="label">Ver el capital en</span><div class="chips fila">${c.monedas.map(m => `<button class="chip" data-act="moncap" data-id="${m.id}" aria-pressed="${mc===m.id}">${esc(m.nombre)}</button>`).join('')}</div></div></section>
   <section class="panel" id="tus-datos"><h2>Tus datos</h2>
