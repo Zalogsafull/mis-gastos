@@ -1367,7 +1367,7 @@ function vMovs(){
   const tabla = list => `<div class="mobile-only list">${list.map(filaMov).join('')}</div>
     <div class="desk-only tablewrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Cuenta / tarjeta</th><th>Cuota</th><th class="r">Original</th><th class="r">${esc(monLbl(monP().id))}</th><th>Nota</th></tr></thead><tbody>${list.map(fila).join('')}</tbody></table></div>`;
   return `
-  <div class="top sticky">${monthNav()}${pid ? `<span class="netoper num ${balP >= 1 ? 'pos' : ''}">${Math.abs(balP) < 1 ? `Con ${nomP}: a mano` : balP > 0 ? `${nomP} te debe ${fmt(balP)}` : `Le debés ${fmt(-balP)}`}</span>` : `<span class="note num">${items.length} registrados${pend.length ? ` · ${pend.length} pendientes` : ''} · neto ${fmt(tot)}</span>`}</div>
+  <div class="top sticky">${monthNav()}${pid ? '' : `<span class="note num">${items.length} registrados${pend.length ? ` · ${pend.length} pendientes` : ''} · neto ${fmt(tot)}</span>`}</div>
   <div class="filtros">
     <span class="note">Ver</span><div class="chips fila">${extraChip}${ch('todo','Todo')}${ch('ingreso','Ingresos')}${ch('salidas','Salidas')}${ch('mover','Transferencias')}${S.cfg.tarjetas.length ? ch('pago','Pagos tarjeta') : ''}</div>
     <span class="note">Gastos</span><div class="chips fila">${ch('gasto','Todos los gastos')}${CATS().map(c => ch('cat:'+c.id, c.nombre)).join('')}</div>
@@ -1375,13 +1375,13 @@ function vMovs(){
     <span class="note">Cuentas</span><div class="chips fila">${S.cfg.cuentas.map(c => ch('cuenta:'+c.id, c.nombre)).join('')}</div>
     ${PERS().length ? `<span class="note">Personas</span><div class="chips fila">${PERS().map(x => ch('persona:'+x.id, x.nombre)).join('')}</div>` : ''}
   </div>
-  ${pid ? `<div class="chips" style="margin-bottom:12px"><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="recibi" data-v="${balP > 0 ? Math.round(balP) : ''}">${nomP} me pagó</button><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="pague" data-v="${balP < 0 ? Math.round(-balP) : ''}">Le pagué a ${nomP}</button></div>` : ''}
   <div class="filters"><input class="inp" id="q" type="search" placeholder="Buscar concepto" value="${esc(S.q)}" aria-label="Buscar concepto"></div>
+  ${pid ? `<div class="chips" style="margin-bottom:12px;align-items:center"><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="recibi" data-v="${balP > 0 ? Math.round(balP) : ''}">${nomP} me pagó</button><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="pague" data-v="${balP < 0 ? Math.round(-balP) : ''}">Le pagué a ${nomP}</button><span class="netoper num ${balP >= 1 ? 'pos' : ''}">${Math.abs(balP) < 1 ? `Con ${nomP}: a mano` : balP > 0 ? `${nomP} te debe ${fmt(balP)}` : `Le debés ${fmt(-balP)}`}</span></div>` : ''}
   ${pend.length ? `<section class="panel"><h2>Pendientes <span class="num">${fmt(totPend)}</span></h2>${tabla(pend)}</section>` : ''}
   <section class="panel">${pend.length ? `<h2>Registrados${pid ? '' : ` <span class="num">neto ${fmt(tot)}</span>`}</h2>` : ''}
     ${items.length ? tabla(items) : `<p class="empty">${pend.length ? 'Todavía no hay nada registrado con este filtro.' : 'No hay movimientos con este filtro.'}</p>`}
   </section>
-  <p class="note">${pid ? `Arriba a la derecha, lo que queda entre ustedes este mes: lo que ${nomP} te debe menos lo que le debés, incluidos los recurrentes con ${nomP} que todavía no marcaste. Cada mes se cierra solo.` : 'Tocá un pendiente para registrarlo con el monto real. Las compras con tarjeta aparecen en el mes en que se pagan, con una cuota por mes.'}</p>`;
+  <p class="note">${pid ? `Al lado de los botones, lo que queda entre ustedes este mes: lo que ${nomP} te debe menos lo que le debés, incluidos los recurrentes con ${nomP} que todavía no marcaste. Cada mes se cierra solo.` : 'Tocá un pendiente para registrarlo con el monto real. Las compras con tarjeta aparecen en el mes en que se pagan, con una cuota por mes.'}</p>`;
 }
 
 function vCuentas(){
