@@ -235,6 +235,7 @@ tbody tr:hover td{background:var(--raise)}
 .sem{height:10px;border-radius:5px;overflow:hidden;background:color-mix(in srgb,var(--bg) 22%,transparent)}
 .sem i{display:block;height:100%;border-radius:5px}
 .sem i.bien{background:var(--hero-ok)} .sem i.mal{background:var(--hero-mal)}
+.netoper{margin-left:auto;font-weight:600;font-size:15px;text-align:right}.netoper.pos{color:var(--good)}
 .semtxt{display:block;margin-top:6px;font-size:12px;opacity:.85}
 .sem.encurso{outline:1.5px solid color-mix(in srgb,var(--bg) 70%,transparent);outline-offset:1.5px}
 .medios{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
@@ -580,7 +581,7 @@ function pendientes(mk){
   const list = [];
   if (mk < inicio()) return list;
   for (const x of itemsDelMes(mk)) if (x.m.estado === 'pend') list.push({kind:'mov', m:x.m, uyu:x.uyu});
-  for (const p of S.plant) if (p.activa !== false && !recPer(p) && !(p.desde && mk < p.desde) && !plantHecha(p, mk)) list.push({kind:'plant', p, uyu: toBase(p) + (p.tipo === 'ingreso' ? Math.round(totalDesc(p.id, mk)) : 0)});
+  for (const p of S.plant) if (p.activa !== false && !(p.desde && mk < p.desde) && !plantHecha(p, mk)) list.push({kind:'plant', p, uyu: toBase(p) + (p.tipo === 'ingreso' ? Math.round(totalDesc(p.id, mk)) : 0)});
   // Pago estimado de cada tarjeta: las cuotas de su resumen anterior menos lo que ya pagaste o tenés cargado este mes
   const pagosDe = tid => S.movs.filter(m => m.tipo === 'pago' && m.tarjeta === tid && mesDe(m.fecha) === mk && m.estado !== 'omitido');
   if (addMes(mk,-1) < inicio()){
@@ -648,7 +649,7 @@ function obligaciones(pid, mk){
 }
 const balanceMes = (pid, mk) => { mk = mk || hoyMes(); return balancePersona(pid, mk) - balancePersona(pid, addMes(mk, -1)) + obligaciones(pid, mk).reduce((a, o) => a + o.v, 0); };
 // En Pendientes del mes: lo que le debés a cada persona hasta ese mes (tu parte de lo que pagó, cuotas incluidas)
-function pendientesPersonas(mk, list){ if (mk < hoyMes()) return list; for (const x of PERS()){ const b = balanceMes(x.id, mk); if (b <= -1) list.push({kind:'per', persona:x.id, monto:Math.round(-b), uyu:-b}); else if (b >= 1) list.push({kind:'cob', persona:x.id, monto:Math.round(b), uyu:b}); } return list; }
+function pendientesPersonas(mk, list){ if (mk < hoyMes()) return list; for (const x of PERS()){ const b = balancePersona(x.id, mk) - balancePersona(x.id, addMes(mk, -1)); if (b <= -1) list.push({kind:'per', persona:x.id, monto:Math.round(-b), uyu:-b}); else if (b >= 1) list.push({kind:'cob', persona:x.id, monto:Math.round(b), uyu:b}); } return list; }
 const usaPersona = pid => S.plant.some(p => p.persona === pid) || S.movs.some(m => m.saldo === pid || m.cargo === pid || (m.split && ((m.split.con || []).includes(pid) || m.split.pagador === pid)));
 function sumar(r, m, v, pend){
   if (pagoOtro(m)) return; // lo pagó otra persona: no sale de tus cuentas
@@ -1152,9 +1153,9 @@ function filaMov(x){
   else if (isCard(m)) extra.push(`<span class="pill card">${esc(nomTj(m.tarjeta))}</span>`);
   if (m.estado === 'pend') extra.push(`<span class="pill pend">Pendiente</span>`);
   if (m.split && (m.split.con || []).length) extra.push(`<span class="pill est">${pagoOtro(m) ? 'Pagó ' + esc(nomPer(m.split.pagador)) : m.split.modo === 'prestado' ? 'Prestado a ' + esc(nomPer(m.split.con[0])) : 'Dividido con ' + esc(m.split.con.map(nomPer).join(', '))}</span>`);
-  if (m.cargo) extra.push(`<span class="pill est">${m.compensado ? 'Descontado con ' : m.tipo === 'ingreso' ? 'Me pagó ' : 'Le pagué a '}${esc(nomPer(m.cargo))}</span>`);
+  if (m.cargo) extra.push(`<span class="pill est">${m.estado === 'pend' ? (m.tipo === 'ingreso' ? 'Te lo paga ' : 'Se lo pagás a ') : m.compensado ? 'Descontado con ' : m.tipo === 'ingreso' ? 'Me pagó ' : 'Le pagué a '}${esc(nomPer(m.cargo))}</span>`);
   if (m.saldo) extra.push(`<span class="pill est">${m.tipo === 'ingreso' ? 'Me pagó ' : 'Le pagué a '}${esc(nomPer(m.saldo))}</span>`);
-  const meta = [m.virtual === 'plant' ? 'monto habitual' : m.virtual ? 'este mes' : dia(m.fecha), etiqueta(m), isCard(m) ? '' : medioTxt(m), !esPpal(m.moneda) ? fmtM(m) + (x.cuotas>1?' total':'') : '', m.traslado && +m.traslado.monto ? (m.traslado.monto > 0 ? `pasan ${fmtEn(m.traslado.monto, m.traslado.moneda)} al mes siguiente` : `${fmtEn(-m.traslado.monto, m.traslado.moneda)} a favor para el mes siguiente`) : ''].filter(Boolean).join(' · ');
+  const meta = [x.ef, m.virtual === 'plant' ? 'monto habitual' : m.virtual ? 'este mes' : dia(m.fecha), etiqueta(m), isCard(m) ? '' : medioTxt(m), !esPpal(m.moneda) ? fmtM(m) + (x.cuotas>1?' total':'') : '', m.traslado && +m.traslado.monto ? (m.traslado.monto > 0 ? `pasan ${fmtEn(m.traslado.monto, m.traslado.moneda)} al mes siguiente` : `${fmtEn(-m.traslado.monto, m.traslado.moneda)} a favor para el mes siguiente`) : ''].filter(Boolean).join(' · ');
   return `<div class="row click" ${accionFila(x)}><div class="t">${esc(m.concepto || TIPOS[m.tipo] || '')}${extra.join('')}</div><div class="m">${esc(meta)}</div><div class="a num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</div></div>`;
 }
 
@@ -1181,8 +1182,8 @@ function vInicio(){
   const tile = (lbl, v, col, sub, fl) => `<button type="button" class="tile tile-btn" data-act="ir" data-filtro="${fl}" aria-label="Ver movimientos de ${esc(lbl)}"><span class="label"><i class="dot" style="background:${col.startsWith('--') ? `var(${col})` : col}"></i>${esc(lbl)}<span class="ir" aria-hidden="true">›</span></span><span class="v num">${fmt(v)}</span>${sub?`<span class="note num">${sub}</span>`:''}</button>`;
   const okTxt = t => t === 'ingreso' ? 'Cobrado' : t === 'mover' ? 'Hecho' : 'Pagado';
   const pRow = p => {
-    if (p.kind === 'cob') return `<div class="prow"><div class="t" data-act="ir" data-filtro="persona:${p.persona}">Cobrarle a ${esc(nomPer(p.persona))}<small>Lo que te debe este mes, ya restado lo que le debés</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="saldar" data-p-id="${p.persona}" data-dir="recibi" data-v="${p.monto}">Cobrado</button><span></span></div>`;
-    if (p.kind === 'per') return `<div class="prow"><div class="t" data-act="ir" data-filtro="persona:${p.persona}">Pagarle a ${esc(nomPer(p.persona))}<small>Lo que le debés este mes, ya restado lo que te debe</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="saldar" data-p-id="${p.persona}" data-dir="pague" data-v="${p.monto}">Pagar</button><span></span></div>`;
+    if (p.kind === 'cob') return `<div class="prow"><div class="t" data-act="ir" data-filtro="persona:${p.persona}">Cobrarle a ${esc(nomPer(p.persona))}<small>Gastos compartidos de este mes</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="saldar" data-p-id="${p.persona}" data-dir="recibi" data-v="${p.monto}">Cobrado</button><span></span></div>`;
+    if (p.kind === 'per') return `<div class="prow"><div class="t" data-act="ir" data-filtro="persona:${p.persona}">Pagarle a ${esc(nomPer(p.persona))}<small>Gastos compartidos de este mes</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="saldar" data-p-id="${p.persona}" data-dir="pague" data-v="${p.monto}">Pagar</button><span></span></div>`;
     if (p.kind === 'est') return `<div class="prow"><div class="t" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pago ${esc(nomTj(p.tarjeta))}${esPpal(p.mon) ? '' : ` en ${esc(MON(p.mon).nombre.toLowerCase())}`}<small>${p.parcial ? 'Lo que falta del resumen de ' : 'Estimado con las cuotas de '}${nombreMes(addMes(mk,-1)).toLowerCase()}${p.entra > 0.004 ? ` + ${fmtEn(p.entra, p.mon)} que pasaron del mes anterior` : p.entra < -0.004 ? ` − ${fmtEn(-p.entra, p.mon)} a favor del mes anterior` : ''}${esPpal(p.mon) ? '' : ` · ≈ ${fmt(p.uyu)}`}</small></div><span class="num">${fmtEn(p.monto, p.mon)}</span><button class="btn ok" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pagar</button><button class="btn ghost" data-act="estquitar" data-tj="${p.tarjeta}" data-mon="${p.mon}" aria-label="No corresponde: quitar este estimado">Quitar</button></div>`;
     if (p.kind === 'mov') return `<div class="prow"><div class="t" data-act="edit" data-id="${p.m.id}">${esc(p.m.concepto)}<small>${esc(etiqueta(p.m))}${!esPpal(p.m.moneda)?' · '+fmtM(p.m):''}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="pagar" data-id="${p.m.id}">${okTxt(p.m.tipo)}</button><span></span></div>`;
     const t = p.p;
@@ -1340,27 +1341,33 @@ function vPersona(pid){
 }
 function vMovs(){
   const mk = S.mes, f = S.filtro;
-  if (f.startsWith('persona:') && PER(f.slice(8))) return vPersona(f.slice(8));
+  const pid = f.startsWith('persona:') && PER(f.slice(8)) ? f.slice(8) : null;
   const filtrar = list => {
     if (f !== 'todo') list = list.filter(x => pasaFiltro(x.m, f));
     if (S.q) { const q = claveConcepto(S.q); list = list.filter(x => claveConcepto(x.m.concepto).includes(q) || claveConcepto(x.m.nota).includes(q)); }
     return list.sort((a,b) => (b.m.fecha||'').localeCompare(a.m.fecha||'') || (b.m.creado||0)-(a.m.creado||0));
   };
   // Las compras con tarjeta (y cada cuota) aparecen en el mes en que se pagan: las del resumen del mes anterior
-  const todos = itemsDelMes(mk).filter(x => !isCard(x.m)).concat(itemsDelMes(addMes(mk, -1)).filter(x => isCard(x.m)));
+  // Con una persona: todo lo que cuenta con ella este mes (con tarjeta, en el mes del cierre; en cuotas, la cuota del mes)
+  const conElla = () => S.movs.filter(m => m.estado !== 'omitido' && conPersona(m, pid) && (Math.abs(enMesPer(m, pid, mk)) >= 0.5 || ((m.cargo === pid || m.saldo === pid || m.estado === 'pend') && mesDe(m.fecha) === mk)))
+    .map(m => { const n = Math.max(1, m.cuotas|0 || 1), v = enMesPer(m, pid, mk), nom = nomPer(pid);
+      const ef = m.cargo === pid ? (m.compensado ? (m.tipo === 'ingreso' ? `${nom} te lo debe` : `Se lo debés`) : 'A mano') : m.saldo === pid ? (m.tipo === 'ingreso' ? `${nom} te pagó` : `Le pagaste`) : Math.abs(v) < 0.5 ? '' : v > 0 ? `${nom} te debe ${fmt(v)}` : `Le debés ${fmt(-v)}`;
+      return {m, uyu: toBase(m) / n, cuota: n > 1 ? difMes(mk, mesPer(m)) + 1 : 0, cuotas: n, ef}; });
+  const todos = pid ? conElla() : itemsDelMes(mk).filter(x => !isCard(x.m)).concat(itemsDelMes(addMes(mk, -1)).filter(x => isCard(x.m)));
   const items = filtrar(todos.filter(x => x.m.estado !== 'pend'));
   const pend = filtrar(todos.filter(x => x.m.estado === 'pend').concat(pendientesComoFilas(mk)));
+  const balP = pid ? balanceMes(pid, mk) : 0, nomP = pid ? esc(nomPer(pid)) : '';
   const neto = x => { const m = x.m; if (isCard(m)) return 0; const r = {ing:0, gastos:0, pagos:0, ahorro:0, tarjeta:0, ingP:0, salP:0, ahoP:0, tarP:0, ext:0, extP:0, cats:{}}; sumar(r, m, x.uyu, false); return r.ing - r.gastos - r.pagos - r.ahorro + r.ext; };
   const tot = items.reduce((a,x) => a + neto(x), 0);
   const totPend = pend.reduce((a,x) => a + x.uyu, 0);
   const ch = (k, l) => `<button class="chip" data-act="filtro" data-f="${k}" aria-pressed="${S.filtro===k}">${esc(l)}</button>`;
-  const visibles = ['todo','ingreso','salidas','mover','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id));
+  const visibles = ['todo','ingreso','salidas','mover','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id), PERS().map(x => 'persona:'+x.id));
   const extraChip = visibles.includes(f) ? '' : `<button class="chip" data-act="filtro" data-f="todo" aria-pressed="true" aria-label="Quitar filtro ${esc(FILTRO_LBL(f))}">${esc(FILTRO_LBL(f))} ✕</button>`;
-  const fila = x => { const m = x.m, pos = esPositivo(m); return `<tr ${accionFila(x)}><td class="num">${m.virtual ? 'este mes' : dia(m.fecha)}</td><td>${esc(m.concepto||'')}${m.estado==='pend'?'<span class="pill pend">Pendiente</span>':''}</td><td>${esc(etiqueta(m))}</td><td>${esc(medioTxt(m))}</td><td class="num">${x.cuotas>1?`${x.cuota}/${x.cuotas}`:''}</td><td class="r num">${!esPpal(m.moneda)?fmtM(m):''}</td><td class="r num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</td><td class="note">${esc(m.virtual === 'plant' ? 'monto habitual' : m.nota||'')}</td></tr>`; };
+  const fila = x => { const m = x.m, pos = esPositivo(m); return `<tr ${accionFila(x)}><td class="num">${m.virtual ? 'este mes' : dia(m.fecha)}</td><td>${esc(m.concepto||'')}${m.estado==='pend'?'<span class="pill pend">Pendiente</span>':''}</td><td>${esc(etiqueta(m))}</td><td>${esc(medioTxt(m))}</td><td class="num">${x.cuotas>1?`${x.cuota}/${x.cuotas}`:''}</td><td class="r num">${!esPpal(m.moneda)?fmtM(m):''}</td><td class="r num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</td><td class="note">${esc(x.ef || (m.virtual === 'plant' ? 'monto habitual' : m.nota||''))}</td></tr>`; };
   const tabla = list => `<div class="mobile-only list">${list.map(filaMov).join('')}</div>
     <div class="desk-only tablewrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Cuenta / tarjeta</th><th>Cuota</th><th class="r">Original</th><th class="r">${esc(monLbl(monP().id))}</th><th>Nota</th></tr></thead><tbody>${list.map(fila).join('')}</tbody></table></div>`;
   return `
-  <div class="top sticky">${monthNav()}<span class="note num">${items.length} registrados${pend.length ? ` · ${pend.length} pendientes` : ''} · neto ${fmt(tot)}</span></div>
+  <div class="top sticky">${monthNav()}${pid ? `<span class="netoper num ${balP >= 1 ? 'pos' : ''}">${Math.abs(balP) < 1 ? `Con ${nomP}: a mano` : balP > 0 ? `${nomP} te debe ${fmt(balP)}` : `Le debés ${fmt(-balP)}`}</span>` : `<span class="note num">${items.length} registrados${pend.length ? ` · ${pend.length} pendientes` : ''} · neto ${fmt(tot)}</span>`}</div>
   <div class="filtros">
     <span class="note">Ver</span><div class="chips fila">${extraChip}${ch('todo','Todo')}${ch('ingreso','Ingresos')}${ch('salidas','Salidas')}${ch('mover','Transferencias')}${S.cfg.tarjetas.length ? ch('pago','Pagos tarjeta') : ''}</div>
     <span class="note">Gastos</span><div class="chips fila">${ch('gasto','Todos los gastos')}${CATS().map(c => ch('cat:'+c.id, c.nombre)).join('')}</div>
@@ -1368,12 +1375,13 @@ function vMovs(){
     <span class="note">Cuentas</span><div class="chips fila">${S.cfg.cuentas.map(c => ch('cuenta:'+c.id, c.nombre)).join('')}</div>
     ${PERS().length ? `<span class="note">Personas</span><div class="chips fila">${PERS().map(x => ch('persona:'+x.id, x.nombre)).join('')}</div>` : ''}
   </div>
+  ${pid ? `<div class="chips" style="margin-bottom:12px"><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="recibi" data-v="${balP > 0 ? Math.round(balP) : ''}">${nomP} me pagó</button><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="pague" data-v="${balP < 0 ? Math.round(-balP) : ''}">Le pagué a ${nomP}</button></div>` : ''}
   <div class="filters"><input class="inp" id="q" type="search" placeholder="Buscar concepto" value="${esc(S.q)}" aria-label="Buscar concepto"></div>
   ${pend.length ? `<section class="panel"><h2>Pendientes <span class="num">${fmt(totPend)}</span></h2>${tabla(pend)}</section>` : ''}
-  <section class="panel">${pend.length ? `<h2>Registrados <span class="num">neto ${fmt(tot)}</span></h2>` : ''}
+  <section class="panel">${pend.length ? `<h2>Registrados${pid ? '' : ` <span class="num">neto ${fmt(tot)}</span>`}</h2>` : ''}
     ${items.length ? tabla(items) : `<p class="empty">${pend.length ? 'Todavía no hay nada registrado con este filtro.' : 'No hay movimientos con este filtro.'}</p>`}
   </section>
-  <p class="note">Tocá un pendiente para registrarlo con el monto real. Las compras con tarjeta aparecen en el mes de su resumen, con una cuota por mes.</p>`;
+  <p class="note">${pid ? `Arriba a la derecha, lo que queda entre ustedes este mes: lo que ${nomP} te debe menos lo que le debés, incluidos los recurrentes con ${nomP} que todavía no marcaste. Cada mes se cierra solo.` : 'Tocá un pendiente para registrarlo con el monto real. Las compras con tarjeta aparecen en el mes en que se pagan, con una cuota por mes.'}</p>`;
 }
 
 function vCuentas(){
@@ -2093,12 +2101,12 @@ function abrirPlant(p, re){
     <div class="field"><span class="label">Subcategoría de recurrentes</span>${chipsDe('p', 'sub', SUBS().map(x => [x.id, x.nombre]).concat([['', 'Ninguna']]), P.sub || '')}</div>
       <div class="field"><span class="label">Se paga con</span><div class="medios"><span class="note">Cuenta</span>${chipsDe('p', 'medio', ctas.map(([id,n]) => ['c:'+id, n]), P.tarjeta ? '' : 'c:'+P.cuenta)}${tjs.length ? `<span class="note">Crédito</span>${chipsDe('p', 'medio', tjs.map(([id,n]) => ['t:'+id, n]), P.tarjeta ? 't:'+P.tarjeta : '')}` : ''}</div></div>
       ${PERS().length ? `<div class="field"><span class="label">¿A quién se lo pagás?</span>${chipsDe('p', 'persona', [['', 'A nadie en particular']].concat(PERS().map(x => [x.id, x.nombre])), P.persona || '')}
-        ${P.persona ? `<p class="note" style="margin:0">Se suma solo cada mes a la cuenta con ${esc(nomPer(P.persona))}: lo que le debés y lo que te debe se restan, y en Pendientes queda la diferencia (Pagarle o Cobrarle).</p>` : ''}</div>` : ''}` : ''}
+        ${P.persona ? `<p class="note" style="margin:0">Aparece cada mes en Pendientes y en los movimientos de ${esc(nomPer(P.persona))}. Al marcarlo podés pagarlo o descontarlo de lo que te debe.</p>` : ''}</div>` : ''}` : ''}
     ${P.tipo==='gasto' ? (() => { const ings = S.plant.filter(x => x.tipo === 'ingreso' && x.id !== P.id);
       return `<div class="field"><span class="label">¿Te lo descuentan de un ingreso?</span>${ings.length ? chipsDe('p', 'descuentaDe', [['', 'No']].concat(ings.map(x => [x.id, 'Sí, de ' + x.nombre])), P.descuentaDe || '') : ''}
         <p class="note" style="margin:0">${ings.length ? 'Para lo que te descuentan del sueldo (un préstamo, una cuota, un aporte). Al cobrar ese ingreso por el neto, la app le suma este monto y lo marca como pagado.' : 'Si te lo descuentan del sueldo, agregá primero el sueldo como ingreso de todos los meses y después marcalo acá.'}</p></div>`; })() : ''}
     ${P.tipo==='ingreso' && PERS().length ? `<div class="field"><span class="label">¿Te lo paga una persona?</span>${chipsDe('p', 'persona', [['', 'No']].concat(PERS().map(x => [x.id, x.nombre])), P.persona || '')}
-      ${P.persona ? `<p class="note" style="margin:0">Se suma solo cada mes a la cuenta con ${esc(nomPer(P.persona))}: lo que te debe y lo que le debés se restan, y en Pendientes queda la diferencia (Cobrarle o Pagarle).</p>` : ''}</div>` : ''}
+      ${P.persona ? `<p class="note" style="margin:0">Aparece cada mes en Pendientes y en los movimientos de ${esc(nomPer(P.persona))}. Al marcarlo podés cobrarlo o descontarlo de lo que le debés.</p>` : ''}</div>` : ''}
     ${P.tipo==='ingreso' ? `<div class="field"><span class="label">Entra en</span>${chipsDe('p', 'cuenta', ctas, P.cuenta)}</div>${descuentosDe(P.id).length ? `<p class="note" style="margin:0">Monto habitual = lo que cobrás en mano (neto). Tiene ${descuentosDe(P.id).length === 1 ? 'un descuento' : descuentosDe(P.id).length + ' descuentos'}: ${esc(descuentosDe(P.id).map(d => d.nombre).join(', '))} (${fmt(totalDesc(P.id))}).</p>` : ''}` : ''}
     ${P.tipo==='mover' ? `<div class="field"><span class="label">Sale de</span>${chipsDe('p', 'de', ctas, P.de)}</div><div class="field"><span class="label">Entra en</span>${chipsDe('p', 'a', ctas.filter(([id]) => id !== P.de), P.a)}</div>` : ''}
     <div class="two"><div class="field"><label for="p-monto">Monto habitual</label><input class="inp" id="p-monto" inputmode="decimal" value="${esc(P.montoTxt)}"></div>
