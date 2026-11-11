@@ -17,7 +17,7 @@
   --bg:#eef2f6; --surface:#ffffff; --raise:#f6f8fb; --ink:#14202c; --muted:#5a6a7b; --line:#d9e0e8;
   --accent:#1d68b0; --accent-ink:#ffffff; --accent-soft:#e2edf8;
   --pend:#a5670f; --pend-soft:#fbf0dc; --good:#2a7a4c; --good-soft:#e1f2e8; --bad:#b33c2b; --bad-soft:#fae6e2;
-  --c-fijos:#6c7f93; --c-super:#23907f; --c-extras:#1d68b0; --c-tarjeta:#8a5cc2; --c-ali:#c27a1d; --c-salud:#c2456b; --c-vest:#5b6fd6; --c-ahorro:#2a7a4c; --c-ing:#14202c; --hero-ok:#4fd18b; --hero-mal:#ff7a66;
+  --c-fijos:#6c7f93; --c-super:#23907f; --c-extras:#1d68b0; --c-tarjeta:#8a5cc2; --c-ali:#c27a1d; --c-salud:#c2456b; --c-vest:#5b6fd6; --c-ahorro:#2a7a4c; --c-ing:#14202c; --hero-ok:#4fd18b; --hero-mal:#ff7a66; --viaje:#b0600c; --viaje-ink:#ffffff; --viaje-soft:#fbecd9;
   --f-display:"Sora", ui-sans-serif, system-ui, sans-serif;
   --f-body:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --r:14px;
@@ -26,20 +26,20 @@
   --bg:#0d131a; --surface:#151e28; --raise:#1b2632; --ink:#e4ecf3; --muted:#91a2b4; --line:#263342;
   --accent:#64a9ec; --accent-ink:#0d131a; --accent-soft:#17304a;
   --pend:#e3a54b; --pend-soft:#3a2b12; --good:#5ec48d; --good-soft:#143124; --bad:#ec7a65; --bad-soft:#3d1c16;
-  --c-fijos:#8fa2b6; --c-super:#43c2ad; --c-extras:#64a9ec; --c-tarjeta:#b48ee8; --c-ali:#e3a54b; --c-salud:#ec7aa0; --c-vest:#98a6f5; --c-ahorro:#5ec48d; --c-ing:#e4ecf3; --hero-ok:#1f8a52; --hero-mal:#c23c27;
+  --c-fijos:#8fa2b6; --c-super:#43c2ad; --c-extras:#64a9ec; --c-tarjeta:#b48ee8; --c-ali:#e3a54b; --c-salud:#ec7aa0; --c-vest:#98a6f5; --c-ahorro:#5ec48d; --c-ing:#e4ecf3; --hero-ok:#1f8a52; --hero-mal:#c23c27; --viaje:#f0a23a; --viaje-ink:#1d1203; --viaje-soft:#33240f;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0d131a; --surface:#151e28; --raise:#1b2632; --ink:#e4ecf3; --muted:#91a2b4; --line:#263342;
   --accent:#64a9ec; --accent-ink:#0d131a; --accent-soft:#17304a;
   --pend:#e3a54b; --pend-soft:#3a2b12; --good:#5ec48d; --good-soft:#143124; --bad:#ec7a65; --bad-soft:#3d1c16;
-  --c-fijos:#8fa2b6; --c-super:#43c2ad; --c-extras:#64a9ec; --c-tarjeta:#b48ee8; --c-ali:#e3a54b; --c-salud:#ec7aa0; --c-vest:#98a6f5; --c-ahorro:#5ec48d; --c-ing:#e4ecf3; --hero-ok:#1f8a52; --hero-mal:#c23c27;
+  --c-fijos:#8fa2b6; --c-super:#43c2ad; --c-extras:#64a9ec; --c-tarjeta:#b48ee8; --c-ali:#e3a54b; --c-salud:#ec7aa0; --c-vest:#98a6f5; --c-ahorro:#5ec48d; --c-ing:#e4ecf3; --hero-ok:#1f8a52; --hero-mal:#c23c27; --viaje:#f0a23a; --viaje-ink:#1d1203; --viaje-soft:#33240f;
   color-scheme:dark}
 /* Oscuro marcado: el oscuro con un poco más de contraste en lo seleccionado y en los bordes */
 :root[data-theme="oscuro-marcado"]{
   --bg:#0b1117; --surface:#141d27; --raise:#1d2834; --ink:#f1f5f9; --muted:#a9b8c7; --line:#3a4a5b;
   --accent:#78b6f2; --accent-ink:#0b1117; --accent-soft:#1b3654;
   --pend:#efb25a; --pend-soft:#3e2d12; --good:#68d499; --good-soft:#143425; --bad:#f38670; --bad-soft:#421d16;
-  --c-fijos:#9aacbf; --c-super:#4fcdb8; --c-extras:#78b6f2; --c-tarjeta:#bd98ef; --c-ali:#efb25a; --c-salud:#f387ab; --c-vest:#a4b1f7; --c-ahorro:#68d499; --c-ing:#f1f5f9; --hero-ok:#22995b; --hero-mal:#cf4430;
+  --c-fijos:#9aacbf; --c-super:#4fcdb8; --c-extras:#78b6f2; --c-tarjeta:#bd98ef; --c-ali:#efb25a; --c-salud:#f387ab; --c-vest:#a4b1f7; --c-ahorro:#68d499; --c-ing:#f1f5f9; --hero-ok:#22995b; --hero-mal:#cf4430; --viaje:#f5ad4b; --viaje-ink:#1d1203; --viaje-soft:#3a2a12;
   color-scheme:dark}
 :root[data-theme="oscuro-marcado"] .chip{border-color:#4d5f73}
 :root[data-theme="oscuro-marcado"] .chip[aria-pressed="true"]{font-weight:600;box-shadow:0 0 0 1.5px var(--accent)}
@@ -290,6 +290,52 @@ tbody tr.ro:hover td{background:transparent}
   .panel .chips.fila{margin-inline:-16px;padding-inline:16px}
 }
 .ini{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+:root[data-acento2="naranja"]{--viaje:#c2410c;--viaje-ink:#ffffff;--viaje-soft:color-mix(in srgb,#c2410c 14%,#ffffff)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"])[data-acento2="naranja"]{--viaje:#fb923c;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#fb923c 20%,#0d131a)}}
+:root[data-theme="dark"][data-acento2="naranja"],:root[data-theme="oscuro-marcado"][data-acento2="naranja"]{--viaje:#fb923c;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#fb923c 20%,#0d131a)}
+:root[data-acento2="verde"]{--viaje:#1f7a4a;--viaje-ink:#ffffff;--viaje-soft:color-mix(in srgb,#1f7a4a 14%,#ffffff)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"])[data-acento2="verde"]{--viaje:#5ec48d;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#5ec48d 20%,#0d131a)}}
+:root[data-theme="dark"][data-acento2="verde"],:root[data-theme="oscuro-marcado"][data-acento2="verde"]{--viaje:#5ec48d;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#5ec48d 20%,#0d131a)}
+:root[data-acento2="violeta"]{--viaje:#6a4bc4;--viaje-ink:#ffffff;--viaje-soft:color-mix(in srgb,#6a4bc4 14%,#ffffff)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"])[data-acento2="violeta"]{--viaje:#a78bfa;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#a78bfa 20%,#0d131a)}}
+:root[data-theme="dark"][data-acento2="violeta"],:root[data-theme="oscuro-marcado"][data-acento2="violeta"]{--viaje:#a78bfa;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#a78bfa 20%,#0d131a)}
+:root[data-acento2="rosa"]{--viaje:#b8336a;--viaje-ink:#ffffff;--viaje-soft:color-mix(in srgb,#b8336a 14%,#ffffff)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"])[data-acento2="rosa"]{--viaje:#f472b6;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#f472b6 20%,#0d131a)}}
+:root[data-theme="dark"][data-acento2="rosa"],:root[data-theme="oscuro-marcado"][data-acento2="rosa"]{--viaje:#f472b6;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#f472b6 20%,#0d131a)}
+:root[data-acento2="turquesa"]{--viaje:#0f7c83;--viaje-ink:#ffffff;--viaje-soft:color-mix(in srgb,#0f7c83 14%,#ffffff)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"])[data-acento2="turquesa"]{--viaje:#2dd4bf;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#2dd4bf 20%,#0d131a)}}
+:root[data-theme="dark"][data-acento2="turquesa"],:root[data-theme="oscuro-marcado"][data-acento2="turquesa"]{--viaje:#2dd4bf;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#2dd4bf 20%,#0d131a)}
+:root[data-acento2="azul"]{--viaje:#1d68b0;--viaje-ink:#ffffff;--viaje-soft:color-mix(in srgb,#1d68b0 14%,#ffffff)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"])[data-acento2="azul"]{--viaje:#64a9ec;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#64a9ec 20%,#0d131a)}}
+:root[data-theme="dark"][data-acento2="azul"],:root[data-theme="oscuro-marcado"][data-acento2="azul"]{--viaje:#64a9ec;--viaje-ink:#111111;--viaje-soft:color-mix(in srgb,#64a9ec 20%,#0d131a)}
+.panel.trip{background:color-mix(in srgb,var(--ink) 5%,var(--surface));border-color:color-mix(in srgb,var(--viaje) 45%,var(--line))}
+.wbar{background:color-mix(in srgb,var(--ink) 13%,var(--surface))}
+.minis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.mini{display:grid;gap:2px;padding:8px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--line);min-width:0}
+.mini .label{font-size:10.5px}
+.mini strong{font-family:var(--f-display);font-size:16px;font-weight:600}
+.mini .note{font-size:11.5px;line-height:1.3}
+.mini.bien strong{color:var(--good)} .mini.mal strong{color:var(--bad)}
+@media (max-width:420px){.minis{grid-template-columns:1fr 1fr}.minis .mini:first-child{grid-column:1/-1}}
+/* Viajes y eventos */
+.panel.trip{background:color-mix(in srgb,var(--viaje-soft) 70%,var(--surface));border-color:color-mix(in srgb,var(--viaje) 35%,var(--line));display:grid;gap:12px}
+.trip .tl{color:var(--viaje);font-weight:600}
+.trip .big2{font-family:var(--f-display);font-size:28px;font-weight:700;line-height:1.1}
+.wbar{height:10px;border-radius:5px;background:color-mix(in srgb,var(--viaje) 18%,var(--surface));overflow:hidden}
+.wbar i{display:block;height:100%;background:var(--viaje);border-radius:5px}
+.pill.ev{background:var(--viaje-soft);color:var(--viaje)}
+.btn.via{background:var(--viaje);color:var(--viaje-ink);border-color:transparent;font-weight:600}
+.btn.wab{background:#1f7a45;color:#fff;border-color:transparent;font-weight:600}
+a.btn{text-decoration:none;display:inline-block}
+.wa{width:100%;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid var(--line);background:var(--raise);border-radius:12px;padding:12px;resize:vertical;min-height:220px;color:var(--ink)}
+.ptc{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 6px 4px 12px;background:var(--surface);font-size:14px}
+.ptc .tag{margin-left:0}
+.ptc button{border:0;background:transparent;color:var(--muted);width:24px;height:24px;border-radius:50%}
+.ptc button:hover{background:var(--raise)}
+.tr{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 12px;border-radius:10px;background:var(--raise);flex-wrap:wrap}
+/* Tarjeta del viaje en gris suave (el color del viaje queda en el borde, la barra y los botones) */
+.panel.trip{background:color-mix(in srgb,var(--ink) 5%,var(--surface));border-color:color-mix(in srgb,var(--viaje) 45%,var(--line))}
+.wbar{background:color-mix(in srgb,var(--ink) 13%,var(--surface))}
 </style>
 
 <div class="app">
@@ -298,6 +344,7 @@ tbody tr.ro:hover td{background:transparent}
     <a href="#inicio" data-v="inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Mes</a>
     <a href="#movimientos" data-v="movimientos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Movimientos</a>
     <a href="#cuentas" data-v="cuentas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l9-6 9 6M5 10v8M10 10v8M14 10v8M19 10v8M3 21h18"/></svg>Cuentas</a>
+    <a href="#eventos" data-v="eventos" data-act="navev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>Viajes</a>
     <a href="#analisis" data-v="analisis"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Análisis</a>
     <a href="#ajustes" data-v="ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Ajustes</a>
   </nav>
@@ -378,7 +425,7 @@ const COL = {movs:'movimientos', plant:'recurrentes', cfg:'config/app'};
 let vistaGuardada = 'monto'; try { vistaGuardada = localStorage.getItem('vistaAn') || 'monto'; } catch(e){}
 const S = {vistaAn: vistaGuardada,
   movs: [], plant: [], plan: {}, hist: {}, cfg: CFG0(), cfgExiste: false,
-  ready: {movs:false, plant:false, cfg:false, plan:false, hist:false},
+  ready: {movs:false, plant:false, cfg:false, plan:false, hist:false, evs:false}, evs: [], evSel: null, evMes: null, keepSel: false,
   db: null, dl: null, offline: false,
   mes: null, view: 'inicio', filtro: 'todo', q: '', anio: 'todos',
 };
@@ -410,6 +457,7 @@ const toBase = m => (m.monto||0) * (esPpal(m.moneda) ? 1 : (m.tasa || tasaDe(m.m
 const monLbl = id => MON(id).simbolo;
 
 // Cuentas y tarjetas
+const EV = id => (S.evs || []).find(e => e.id === id);
 const CTA = id => S.cfg.cuentas.find(c => c.id === id);
 const TJ = id => S.cfg.tarjetas.find(t => t.id === id);
 const nomCta = id => id === 'ext' ? 'Otro lado' : CTA(id)?.nombre || (id ? String(id) : 'Cuenta borrada');
@@ -417,7 +465,7 @@ const nomTj = id => TJ(id)?.nombre || (id ? String(id) : 'Tarjeta borrada');
 const esDia = id => { if (!id) return true; if (id === 'ext') return false; const c = CTA(id); return c ? c.tipo !== 'ahorro' : false; };
 const esExt = m => m.tipo === 'mover' && (m.de === 'ext' || m.a === 'ext');
 const isCard = m => m.tipo === 'gasto' && !!m.tarjeta;
-const medioTxt = m => m.tipo === 'mover' ? `${nomCta(m.de)} → ${nomCta(m.a)}` : m.tarjeta && m.tipo === 'pago' ? (m.cuenta ? `${nomTj(m.tarjeta)} desde ${nomCta(m.cuenta)}` : nomTj(m.tarjeta)) : m.tarjeta ? nomTj(m.tarjeta) : m.cuenta ? nomCta(m.cuenta) : '';
+const medioTxt = m => m.ajeno ? 'Pagó ' + nomP(EV(m.evento) || {}, m.pagador) : m.tipo === 'mover' ? `${nomCta(m.de)} → ${nomCta(m.a)}` : m.tarjeta && m.tipo === 'pago' ? (m.cuenta ? `${nomTj(m.tarjeta)} desde ${nomCta(m.cuenta)}` : nomTj(m.tarjeta)) : m.tarjeta ? nomTj(m.tarjeta) : m.cuenta ? nomCta(m.cuenta) : '';
 const cuentasDia = () => S.cfg.cuentas.filter(c => c.tipo !== 'ahorro');
 const cuentaDefecto = () => (cuentasDia()[0] || S.cfg.cuentas[0] || {}).id || null;
 const monedasDe = (k, id) => { if (k === 'c' && id === 'ext') return S.cfg.monedas.map(m => m.id); const o = k === 't' ? TJ(id) : CTA(id); return o && o.monedas && o.monedas.length ? o.monedas : [monP().id]; };
@@ -487,6 +535,7 @@ function itemsDelMes(mk){
   }
   for (const m of S.movs){
     if (m.estado === 'omitido') continue;
+    if (m.evento && (m.ajeno || pagoOtro(m))) continue; // lo pagó otra persona en un viaje o salida: se ve solo ahí
     const n = Math.max(1, m.cuotas|0 || 1);
     if (isCard(m)){
       const i = difMes(mk, mesResumen(m));
@@ -617,7 +666,7 @@ const pagoOtro = m => !!(m && m.split && m.split.pagador && m.split.pagador !== 
 // Lo que cada movimiento cambia en el balance con una persona (en moneda principal): + te debe, − le debés
 // Parte ya vencida de una compra en cuotas a un mes dado (1 si es en una sola)
 // Mes desde el que cuenta un gasto con otra persona: con tarjeta, el del cierre; si lo pagó otra persona en cuotas, el que se eligió; si no, el de la fecha
-const mesPer = m => m.inicioCuotas || (isCard(m) ? mesResumen(m) : mesDe(m.fecha));
+const mesPer = m => m.inicioCuotas || (isCard(m) ? addMes(mesResumen(m), 1) : mesDe(m.fecha)); // con tarjeta: el mes en que se paga
 function devengado(m, hasta, real){
   const n = Math.max(1, m.cuotas|0 || 1);
   const ini = mesPer(m);
@@ -694,6 +743,7 @@ const balanceMes = (pid, mk) => { mk = mk || hoyMes(); return balancePersona(pid
 function pendientesPersonas(mk, list){ if (mk < hoyMes()) return list; for (const x of PERS()){ const b = balancePersona(x.id, mk) - balancePersona(x.id, addMes(mk, -1)); if (b <= -1) list.push({kind:'per', persona:x.id, monto:Math.round(-b), uyu:-b}); else if (b >= 1) list.push({kind:'cob', persona:x.id, monto:Math.round(b), uyu:b}); } return list; }
 const usaPersona = pid => S.plant.some(p => p.persona === pid) || S.movs.some(m => m.saldo === pid || m.cargo === pid || (m.split && ((m.split.con || []).includes(pid) || m.split.pagador === pid)));
 function sumar(r, m, v, pend){
+  if (m.ajeno) return; // gasto de una salida que pagó otra persona: queda solo en la salida
   if (pagoOtro(m)) return; // lo pagó otra persona: no sale de tus cuentas
   if (m.compensado) return; // descontado del saldo con esa persona: no entra ni sale plata
   if (m.tipo === 'ingreso'){ pend ? r.ingP += v : r.ing += v; if (!esDia(m.cuenta)) pend ? r.ahoP += v : r.ahorro += v; }
@@ -732,7 +782,7 @@ function efectos(m){
 }
 function efectos0(m){
   const v = m.monto || 0;
-  if (m.compensado) return [];
+  if (m.compensado || m.ajeno) return []; // ajeno: lo pagó otra persona en una salida
   if (m.tipo === 'gasto') return isCard(m) || pagoOtro(m) ? [] : [{c:m.cuenta, mon:m.moneda, v:-v}];
   if (m.tipo === 'ingreso') return [{c:m.cuenta, mon:m.moneda, v}];
   if (m.tipo === 'pago') return [{c:m.cuenta, mon:m.moneda, v:-v}];
@@ -852,7 +902,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e){} };
 let desuscribir = [];
 function conectar(){
   desuscribir.forEach(u => { try { u && u(); } catch(e){} }); desuscribir = [];
-  S.movs = []; S.plant = []; S.plan = {}; S.hist = {}; S.cfg = CFG0(); S.cfgExiste = false; S.slow = false;
+  S.movs = []; S.plant = []; S.plan = {}; S.hist = {}; S.evs = []; S.cfg = CFG0(); S.cfgExiste = false; S.slow = false;
   Object.keys(S.ready).forEach(k => S.ready[k] = false);
   const timer = setTimeout(() => { S.slow = true; render(); }, 10000);
   const done = k => { S.ready[k] = true; if (Object.values(S.ready).every(Boolean)) { clearTimeout(timer); S.slow = false; } render(); };
@@ -861,6 +911,7 @@ function conectar(){
   sub(COL.movs, 'movs', docs => S.movs = docs.map(d => ({id:d.id, ...d.data()})));
   sub(COL.plant, 'plant', docs => S.plant = docs.map(d => ({id:d.id, ...d.data()})).sort((a,b)=>(a.orden||0)-(b.orden||0)));
   sub('hist', 'hist', docs => { const h = {}; docs.forEach(d => h[d.id] = d.data()); S.hist = h; });
+  sub('eventos', 'evs', docs => S.evs = docs.map(d => ({id:d.id, ...d.data()})));
   sub('planilla', 'plan', docs => { const h = {}; docs.forEach(d => h[d.id] = d.data()); S.plan = h; });
   desuscribir.push(S.db.doc(COL.cfg).onSnapshot(s => {
     if (s.exists){ const d = s.data(); S.cfg = {...CFG0(), ...d}; S.cfgExiste = true; if (S.mes < inicio()) S.mes = inicio(); }
@@ -893,7 +944,7 @@ function normalizarDatos(d){
 function datosActuales(){
   const sinId = arr => Object.fromEntries(arr.map(({id, ...d}) => [id, d]));
   const [cn, cid] = COL.cfg.split('/');
-  const extra = {}; if (Object.keys(S.plan || {}).length) extra.planilla = clonar(S.plan); if (Object.keys(S.hist || {}).length) extra.hist = clonar(S.hist);
+  const extra = {}; if (Object.keys(S.plan || {}).length) extra.planilla = clonar(S.plan); if (Object.keys(S.hist || {}).length) extra.hist = clonar(S.hist); if ((S.evs || []).length) extra.eventos = sinId(S.evs);
   return {[COL.movs]: sinId(S.movs), [COL.plant]: sinId(S.plant), [cn]: S.cfgExiste ? {[cid]: {...S.cfg}} : {}, ...extra};
 }
 // Escribe una copia completa en una base. Con borrarIds, quita antes lo que no está en la copia.
@@ -907,6 +958,7 @@ async function volcar(db, datos, actuales){
   }
   for (const [id, d] of Object.entries(datos[COL.movs] || {})){ await db.collection(COL.movs).doc(id).set(d); paso(); }
   for (const [id, d] of Object.entries(datos[COL.plant] || {})){ await db.collection(COL.plant).doc(id).set(d); paso(); }
+  for (const k of ['planilla', 'hist', 'eventos']) if (datos[k]) for (const [id, d] of Object.entries(datos[k])){ await db.collection(k).doc(id).set(d); paso(); }
   if (datos[cn] && datos[cn][cid]) await db.doc(COL.cfg).set(datos[cn][cid]);
 }
 // Descarga un archivo: con la función de Claude si está; en el celular, con el menú Compartir; si no, como descarga común
@@ -1094,6 +1146,10 @@ document.addEventListener('keydown', ev => { const h = ev.target.closest && ev.t
 // ---------- Apariencia: se guarda en este dispositivo ----------
 const TEMAS = [['auto','Automático'], ['light','Claro'], ['dark','Oscuro'], ['oscuro-marcado','Oscuro marcado']];
 const ACENTOS = [["azul", "Azul", "#1d68b0"], ["verde", "Verde", "#1f7a4a"], ["violeta", "Violeta", "#6a4bc4"], ["naranja", "Naranja", "#b45309"], ["rosa", "Rosa", "#b8336a"], ["turquesa", "Turquesa", "#0f7c83"]];
+const ACENTOS2 = [['amarillo', 'Amarillo', '#b0600c']].concat([["naranja", "Naranja", "#c2410c"], ["verde", "Verde", "#1f7a4a"], ["violeta", "Violeta", "#6a4bc4"], ["rosa", "Rosa", "#b8336a"], ["turquesa", "Turquesa", "#0f7c83"], ["azul", "Azul", "#1d68b0"]]);
+const acento2Actual = () => { const a = lsGet('misgastos.acento2'); return ACENTOS2.some(x => x[0] === a) ? a : 'amarillo'; };
+function aplicarAcento2(a){ const el = document.documentElement; if (!a || a === 'amarillo') delete el.dataset.acento2; else el.dataset.acento2 = a; }
+aplicarAcento2(acento2Actual());
 const acentoActual = () => { const a = lsGet('misgastos.acento'); return ACENTOS.some(x => x[0] === a) ? a : 'azul'; };
 function aplicarAcento(a){ const el = document.documentElement; if (!a || a === 'azul') delete el.dataset.acento; else el.dataset.acento = a; }
 aplicarAcento(acentoActual());
@@ -1143,10 +1199,12 @@ async function guardar(id, data){
 async function borrar(col, id){ try { await S.db.collection(col).doc(id).delete(); return true; } catch(e){ toast('No se pudo borrar'); return false; } }
 
 // ---------- Rutas ----------
-const VISTAS = ['inicio','movimientos','cuentas','analisis','ajustes'];
+const VISTAS = ['inicio','movimientos','cuentas','eventos','analisis','ajustes'];
 function route(){
   const v = (location.hash || '#inicio').slice(1);
-  S.view = VISTAS.includes(v) ? v : 'inicio';
+  const nueva = VISTAS.includes(v) ? v : 'inicio';
+  if (nueva === 'eventos' && S.view !== 'eventos' && !S.keepSel) S.evSel = null;
+  S.keepSel = false; S.view = nueva;
   document.querySelectorAll('.nav a').forEach(a => a.setAttribute('aria-current', a.dataset.v === S.view ? 'page' : 'false'));
   render();
 }
@@ -1157,7 +1215,7 @@ function render(){
   charts.splice(0).forEach(c => c.destroy());
   const listo = Object.values(S.ready).every(Boolean);
   if (!listo && !S.slow && !S.movs.length) return;
-  const html = {inicio: vInicio, movimientos: vMovs, cuentas: vCuentas, analisis: vAnalisis, ajustes: vAjustes}[S.view]();
+  const html = {inicio: vInicio, movimientos: vMovs, cuentas: vCuentas, eventos: vEventos, analisis: vAnalisis, ajustes: vAjustes}[S.view]();
   $('#main').innerHTML = `<div class="view">${banner()}${html}</div>`;
   if (S.view === 'ajustes') plegarAjustes();
   if (S.view === 'analisis') dibujarGraficas();
@@ -1194,6 +1252,7 @@ function filaMov(x){
   if (x.cuotas > 1 && x.cuota) extra.push(`<span class="pill card">${x.cuota}/${x.cuotas}</span>`);
   else if (isCard(m)) extra.push(`<span class="pill card">${esc(nomTj(m.tarjeta))}</span>`);
   if (m.estado === 'pend') extra.push(`<span class="pill pend">Pendiente</span>`);
+  if (m.evento && EV(m.evento)) extra.push(`<span class="pill ev">${esc(EV(m.evento).nombre)}</span>`);
   if (m.split && (m.split.con || []).length) extra.push(`<span class="pill est">${m.split.modo === 'pedido' ? 'Se lo pedí a ' + esc(nomPer(m.split.pagador)) : pagoOtro(m) ? 'Pagó ' + esc(nomPer(m.split.pagador)) : m.split.modo === 'prestado' ? 'Prestado a ' + esc(nomPer(m.split.con[0])) : 'Dividido con ' + esc(m.split.con.map(nomPer).join(', '))}</span>`);
   if (m.cargo) extra.push(`<span class="pill est">${m.estado === 'pend' ? (m.tipo === 'ingreso' ? 'Te lo paga ' : 'Se lo pagás a ') : m.compensado ? 'Descontado con ' : m.tipo === 'ingreso' ? 'Me pagó ' : 'Le pagué a '}${esc(nomPer(m.cargo))}</span>`);
   if (m.saldo) extra.push(`<span class="pill est">${m.tipo === 'ingreso' ? 'Me pagó ' : 'Le pagué a '}${esc(nomPer(m.saldo))}</span>`);
@@ -1220,7 +1279,7 @@ function vInicio(){
   const mk = S.mes, r = resumen(mk), pend = pendientes(mk);
   const ingT = r.ing + r.ingP || 1;
   const w = v => Math.max(0, Math.min(100, v/ingT*100)).toFixed(1);
-  const items = itemsDelMes(mk).filter(x => x.m.estado !== 'pend').sort((a,b) => (b.m.fecha||'').localeCompare(a.m.fecha||'') || (b.m.creado||0)-(a.m.creado||0));
+  const items = itemsDelMes(mk).filter(x => !isCard(x.m)).concat(itemsDelMes(addMes(mk, -1)).filter(x => isCard(x.m))).filter(x => x.m.estado !== 'pend').sort((a,b) => (b.m.fecha||'').localeCompare(a.m.fecha||'') || (b.m.creado||0)-(a.m.creado||0));
   const tile = (lbl, v, col, sub, fl) => `<button type="button" class="tile tile-btn" data-act="ir" data-filtro="${fl}" aria-label="Ver movimientos de ${esc(lbl)}"><span class="label"><i class="dot" style="background:${col.startsWith('--') ? `var(${col})` : col}"></i>${esc(lbl)}<span class="ir" aria-hidden="true">›</span></span><span class="v num">${fmt(v)}</span>${sub?`<span class="note num">${sub}</span>`:''}</button>`;
   const okTxt = t => t === 'ingreso' ? 'Cobrado' : t === 'mover' ? 'Hecho' : 'Pagado';
   const pRow = p => {
@@ -1260,6 +1319,7 @@ function vInicio(){
     <div class="flow" aria-hidden="true"><i style="width:${w(r.salida+r.salP)}%;background:var(--c-extras)"></i><i style="width:${w(Math.max(0, r.ahorro+r.ahoP))}%;background:var(--c-ahorro)"></i></div>
     <div class="sub num"><button type="button" class="lnk" data-act="ir" data-filtro="ingreso">Ingresos ${fmt(r.ing + r.ingP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="salidas"><i class="pto" style="background:var(--c-extras)"></i>Salidas ${fmt(r.salida + r.salP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="mover"><i class="pto" style="background:var(--c-ahorro)"></i>Ahorro ${fmt(r.ahorro + r.ahoP)}</button>${(r.ing + r.ingP) - (r.salida + r.salP) - Math.max(0, r.ahorro + r.ahoP) >= 1 ? `<span class="libre"><i class="pto pto-libre"></i>Libre ${fmt((r.ing + r.ingP) - (r.salida + r.salP) - Math.max(0, r.ahorro + r.ahoP))}</span>` : ''}${Math.abs(r.ext + r.extP) >= 1 ? `<button type="button" class="lnk" data-act="ir" data-filtro="mover">${r.ext + r.extP > 0 ? 'Depósitos' : 'Retiros'} ${fmt(Math.abs(r.ext + r.extP))}</button>` : ''}</div>
   </section>
+  ${tarjetaViajes()}
   <div class="grid4">
     ${catTiles}
     ${listaTj.length ? tile('Pago tarjetas', r.pagos + pagoPend, '--c-tarjeta', `resumen de ${MESES[+addMes(mk,-1).slice(5)-1].toLowerCase()}${pagoPend ? ` · falta ${fmt(pagoPend)}` : ' · pagado'}`, 'pago') : ''}
@@ -1282,6 +1342,8 @@ function vInicio(){
 
 // Filtros de Movimientos (también los usan los cuadros de la pantalla Mes)
 function pasaFiltro(m, f){
+  if (f === 'eventos') return !!m.evento;
+  if (f.startsWith('ev:')) return m.evento === f.slice(3);
   const card = isCard(m);
   if (f === 'tarjeta') return card;
   if (f.startsWith('tarjeta:')) return m.tarjeta === f.slice(8);
@@ -1289,14 +1351,16 @@ function pasaFiltro(m, f){
   if (f.startsWith('cuenta:')){ const id = f.slice(7); return m.cuenta === id || m.de === id || m.a === id; }
   if (f === 'gasto') return m.tipo === 'gasto' && !card;
   if (f.startsWith('cat:')) return m.tipo === 'gasto' && !card && m.cat === f.slice(4);
-  if (f === 'salidas') return (m.tipo === 'gasto' && !card) || m.tipo === 'pago';
+  if (f === 'salidas') return m.tipo === 'gasto' || m.tipo === 'pago'; // también las compras con tarjeta (se listan en el mes en que se pagan; el neto no las suma dos veces)
   if (f === 'pend') return m.estado === 'pend';
   return m.tipo === f;
 }
-const FILTRO_LBL = f => f.startsWith('persona:') ? nomPer(f.slice(8)) : f.startsWith('cat:') ? nomCat(f.slice(4)) : f.startsWith('tarjeta:') ? nomTj(f.slice(8)) : f.startsWith('cuenta:') ? nomCta(f.slice(7)) : ({salidas:'Salidas', pend:'Pendientes', mover:'Transferencias'}[f] || f);
+const FILTRO_LBL = f => f.startsWith('ev:') ? (EV(f.slice(3))?.nombre || 'Viaje') : f.startsWith('persona:') ? nomPer(f.slice(8)) : f.startsWith('cat:') ? nomCat(f.slice(4)) : f.startsWith('tarjeta:') ? nomTj(f.slice(8)) : f.startsWith('cuenta:') ? nomCta(f.slice(7)) : ({eventos:'Viajes y salidas', salidas:'Salidas', pend:'Pendientes', mover:'Transferencias'}[f] || f);
 function accionFila(x){
   const m = x.m;
   if (m.virtual === 'plant') return `data-act="plantform" data-id="${m.pid}"`;
+  if (m.evento && m.division) return `data-act="evgasto" data-id="${m.id}"`;
+  if (m.evento && m.liq) return `data-act="evver" data-id="${m.evento}"`;
   if (m.virtual === 'est') return `data-act="pagoest" data-tj="${m.tarjeta}" data-mon="${m.moneda}" data-v="${m.monto}"`;
   return `data-act="edit" data-id="${m.id}"`;
 }
@@ -1306,7 +1370,7 @@ function pendientesComoFilas(mk){
     : {m:{...movDesdePlant(p.p, 'pend', mk), virtual:'plant', pid:p.p.id}, uyu:p.uyu, cuota:0, cuotas:1});
 }
 // ---------- Ritmo del gasto del día a día ----------
-const esVariable = m => m.tipo === 'gasto' && !isCard(m) && !pagoOtro(m) && !(m.split && m.split.modo === 'prestado') && catsVariables().includes(m.cat) && !m.plantilla && m.origen !== 'arrastre' && m.estado !== 'omitido';
+const esVariable = m => m.tipo === 'gasto' && !m.ajeno && !isCard(m) && !pagoOtro(m) && !(m.split && m.split.modo === 'prestado') && catsVariables().includes(m.cat) && !m.plantilla && m.origen !== 'arrastre' && m.estado !== 'omitido';
 // Barra de 4 tramos (semanas del mes) que se va pintando con los días que pasan.
 // Cada semana se mide sola: su parte de lo que queda del presupuesto. La semana en curso se pinta según lo que correspondía gastar hasta hoy.
 function barraSemanas(mk, saldoFin){
@@ -1390,7 +1454,7 @@ function vMovs(){
     return list.sort((a,b) => (b.m.fecha||'').localeCompare(a.m.fecha||'') || (b.m.creado||0)-(a.m.creado||0));
   };
   // Las compras con tarjeta (y cada cuota) aparecen en el mes en que se pagan: las del resumen del mes anterior
-  // Con una persona: todo lo que cuenta con ella este mes (con tarjeta, en el mes del cierre; en cuotas, la cuota del mes)
+  // Con una persona: todo lo que cuenta con ella este mes (con tarjeta, en el mes en que se paga; en cuotas, la cuota del mes)
   const conElla = () => movsPersonaMes(pid, mk)
     .map(m => { const n = Math.max(1, m.cuotas|0 || 1), v = enMesPer(m, pid, mk), nom = nomPer(pid);
       const ef = m.cargo === pid ? (m.compensado ? (m.tipo === 'ingreso' ? `${nom} te lo debe` : `Se lo debés`) : 'A mano') : m.saldo === pid ? (m.tipo === 'ingreso' ? `${nom} te pagó` : `Le pagaste`) : Math.abs(v) < 0.5 ? '' : v > 0 ? `${nom} te debe ${fmt(v)}` : `Le debés ${fmt(-v)}`;
@@ -1403,7 +1467,7 @@ function vMovs(){
   const tot = items.reduce((a,x) => a + neto(x), 0);
   const totPend = pend.reduce((a,x) => a + x.uyu, 0);
   const ch = (k, l) => `<button class="chip" data-act="filtro" data-f="${k}" aria-pressed="${S.filtro===k}">${esc(l)}</button>`;
-  const visibles = ['todo','ingreso','salidas','mover','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id), PERS().map(x => 'persona:'+x.id));
+  const visibles = ['todo','ingreso','salidas','mover','eventos','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id), PERS().map(x => 'persona:'+x.id));
   const extraChip = visibles.includes(f) ? '' : `<button class="chip" data-act="filtro" data-f="todo" aria-pressed="true" aria-label="Quitar filtro ${esc(FILTRO_LBL(f))}">${esc(FILTRO_LBL(f))} ✕</button>`;
   const fila = x => { const m = x.m, pos = esPositivo(m); return `<tr ${accionFila(x)}><td class="num">${m.virtual ? 'este mes' : dia(m.fecha)}</td><td>${esc(m.concepto||'')}${m.estado==='pend'?'<span class="pill pend">Pendiente</span>':''}</td><td>${esc(etiqueta(m))}</td><td>${esc(medioTxt(m))}</td><td class="num">${x.cuotas>1?`${x.cuota}/${x.cuotas}`:''}</td><td class="r num">${!esPpal(m.moneda)?fmtM(m):''}</td><td class="r num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</td><td class="note">${esc(x.ef || (m.virtual === 'plant' ? 'monto habitual' : m.nota||''))}</td></tr>`; };
   const tabla = list => `<div class="mobile-only list">${list.map(filaMov).join('')}</div>
@@ -1411,7 +1475,7 @@ function vMovs(){
   return `
   <div class="top sticky">${monthNav()}${pid ? '' : `<span class="note num">${items.length} registrados${pend.length ? ` · ${pend.length} pendientes` : ''} · neto ${fmt(tot)}</span>`}</div>
   <div class="filtros">
-    <span class="note">Ver</span><div class="chips fila">${extraChip}${ch('todo','Todo')}${ch('ingreso','Ingresos')}${ch('salidas','Salidas')}${ch('mover','Transferencias')}${S.cfg.tarjetas.length ? ch('pago','Pagos tarjeta') : ''}</div>
+    <span class="note">Ver</span><div class="chips fila">${extraChip}${ch('todo','Todo')}${ch('ingreso','Ingresos')}${ch('salidas','Salidas')}${ch('mover','Transferencias')}${(S.evs || []).length ? ch('eventos','Viajes y salidas') : ''}${S.cfg.tarjetas.length ? ch('pago','Pagos tarjeta') : ''}</div>
     <span class="note">Gastos</span><div class="chips fila">${ch('gasto','Todos los gastos')}${CATS().map(c => ch('cat:'+c.id, c.nombre)).join('')}</div>
     ${S.cfg.tarjetas.length ? `<span class="note">Tarjetas</span><div class="chips fila">${S.cfg.tarjetas.length > 1 ? ch('tarjeta','Todas') : ''}${S.cfg.tarjetas.map(t => ch('tarjeta:'+t.id, t.nombre)).join('')}</div>` : ''}
     <span class="note">Cuentas</span><div class="chips fila">${S.cfg.cuentas.map(c => ch('cuenta:'+c.id, c.nombre)).join('')}</div>
@@ -1638,6 +1702,7 @@ function vAjustes(){
   <section class="panel"><h2>Apariencia</h2>
     <div class="chips fila">${TEMAS.map(([k, n]) => `<button class="chip" data-act="tema" data-v="${k}" aria-pressed="${temaActual() === k}">${n}</button>`).join('')}</div>
     <div class="field" style="margin-top:12px"><span class="label">Color de acento</span><div class="acentos">${ACENTOS.map(([k, n, c]) => `<button type="button" class="acento" data-act="acento" data-v="${k}" aria-pressed="${acentoActual() === k}" aria-label="${n}" title="${n}" style="background:${c}"></button>`).join('')}</div></div>
+    <div class="field" style="margin-top:12px"><span class="label">Color de viajes y salidas</span><div class="acentos">${ACENTOS2.map(([k, n, c]) => `<button type="button" class="acento" data-act="acento2" data-v="${k}" aria-pressed="${acento2Actual() === k}" aria-label="${n}" title="${n}" style="background:${c}"></button>`).join('')}</div></div>
     <div class="temamuestra" aria-label="Muestra">
       <span class="label">Así se ven los controles</span>
       <div class="chips"><span class="chip" aria-pressed="true">Súper</span><span class="chip" aria-pressed="false">Salud</span><span class="chip" aria-pressed="false">Extras</span></div>
@@ -1740,6 +1805,11 @@ function abrirAyuda(){
         <li><strong>Movimientos</strong>: todo lo del mes, con filtros por tipo, categoría, tarjeta y cuenta.</li>
         <li><strong>Cuentas</strong>: el saldo de cada cuenta en cada moneda y tu capital ahorrado.</li>
         <li><strong>Análisis</strong>: gráficas mes a mes, tasa de ahorro y en qué se va la plata.</li></ul></div>
+      <div><h4>Viajes y salidas</h4><ul>
+        <li>En <strong>Viajes</strong> creás un viaje con fechas, un presupuesto de viáticos y con quién vas (de tus Personas). Aparece en el inicio con su botón para cargar gastos.</li>
+        <li>Lo que cargás con ese botón es un gasto común que además resta de los viáticos. Lo previo (vuelos, reservas) lo cargás con el + de siempre y elegís el viaje en "¿Es de un viaje?".</li>
+        <li>Si un gasto lo pagó otra persona, usá Dividir → pagó ella: no aparece en tus gastos, queda en el viaje y como deuda. Cuando le pagás, ese pago sí aparece.</li>
+        <li>Una comida o salida puede tener invitados temporales. Lo que pagás vos aparece en tus gastos; lo que pagan otros, solo en la salida. Al saldar: si pagás vos es un gasto, si te pagan es un ingreso.</li></ul></div>
       <div><h4>Tus datos y el cambio de teléfono</h4><ul>
         <li>${S.modo === 'local' ? 'Tus datos se guardan en este dispositivo y la app funciona sin internet.' : 'Tus datos se guardan en tu cuenta de Claude.'}</li>
         ${driveDisponible() ? `<li>Si conectás <strong>Google Drive</strong> (Ajustes → Tus datos), también se guardan en el archivo ${DRIVE.archivo} de tu Drive. Cada cambio se sube solo; si pasó un rato, la app te pide un toque en <em>Sincronizar</em> para renovar el permiso. En otro teléfono o en la computadora, abrí la app y conectá la misma cuenta.</li>` : ''}
@@ -1814,7 +1884,7 @@ function abrirHoja(re){
       ${pendPago && !F.id && F.estado !== 'pend' ? `<label class="check"><input type="checkbox" id="f-desc" ${F.descontar !== false ? 'checked' : ''}> Descontar de lo pendiente de ${esc(nomTj(F.tarjeta))} este mes (${fmtM(pendPago)})</label>` : ''}`
     : `<p class="note">Todavía no tenés tarjetas. Agregalas en Ajustes.</p>`;
   $('#overlay').innerHTML = `<div class="scrim" data-act="close"><form class="sheet${re?'':' anim'}" id="sheet" role="dialog" aria-modal="true" aria-label="Movimiento" novalidate>
-    <header><h3>${F.plRef ? `Editar · ${nombreMes(F.plRef.mk)}` : F.id ? 'Editar movimiento' : 'Nuevo movimiento'}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
+    <header><h3>${F.plRef ? `Editar · ${nombreMes(F.plRef.mk)}` : F.id ? 'Editar movimiento' : F.evento && EV(F.evento) && !F.id ? `Gasto · ${esc(EV(F.evento).nombre)}` : 'Nuevo movimiento'}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
     ${seg('f', 'tipo', Object.entries(TIPOS).filter(([k]) => k !== 'pago' || tjs.length || F.tipo === 'pago').filter(([k]) => k !== 'mover' || F.tipo === 'mover'), F.tipo)}
     ${F.tipo==='pago' ? `<p class="note" style="margin:-6px 0 0">El pago de la factura de una tarjeta, o un adelanto. Una compra con tarjeta se carga en Gasto.</p>` : ''}
     <div class="amount"><button type="button" data-act="moneda" aria-label="Cambiar moneda"${ms.length < 2 ? ' tabindex="-1"' : ''}>${esc(monLbl(F.moneda))}</button><input id="f-monto" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(F.montoTxt)}" aria-label="Monto"></div>
@@ -1823,6 +1893,7 @@ function abrirHoja(re){
     ${F.tipo==='gasto' ? `<div class="field"><span class="label">Categoría</span>${chipsFila('f', 'cat', porUso(CATS().map(c => [c.id, c.nombre]), usoCat()), F.cat)}</div>` : ''}
     ${F.tipo === 'pago' ? '' : `<div class="field"><label for="f-concepto">${F.tipo==='gasto'?'Dónde / en qué':'Concepto'}</label><input class="inp" id="f-concepto" autocomplete="off" value="${esc(F.concepto)}" placeholder="${F.tipo==='gasto'?(F.cat==='Súper'?'Supermercado, feria…':'Farmacia, taxi…'):'Sueldo, aguinaldo…'}">
       ${sug.length ? chipsDe('f', 'concepto', sug.map(s => [s,s]), F.concepto) : ''}</div>`}
+    ${F.tipo === 'gasto' && !F.plRef && !F.cargo ? bloqueViaje() : ''}
     ${F.tipo === 'gasto' && PERS().length && !F.plRef && !F.cargo ? bloqueDividir() : ''}
     ${F.tipo === 'gasto' && F.cargo && PER(F.cargo) ? (() => { const tedebe = balanceMes(F.cargo, mesDe(F.fecha)) - (F.id ? enMesPer(S.movs.find(m => m.id === F.id), F.cargo, mesDe(F.fecha)) : 0), nom = esc(nomPer(F.cargo));
       return `<p class="note" style="margin:0">Se lo pagás a ${nom}: aparece en sus movimientos.</p>${F.tarjeta ? '' : `<label class="check"><input type="checkbox" id="f-compensa" ${F.compensado ? 'checked' : ''}> No se lo pagué: lo descuento de lo que me debe ${nom}${tedebe >= 1 ? ` (este mes te debe ${fmt(tedebe)})` : ''}</label>
@@ -1953,6 +2024,8 @@ async function enviarForm(){
     cuenta: card ? null : F.cuenta, tarjeta: (card || F.tipo === 'pago') ? F.tarjeta : null, cuotas: card || (F.tipo === 'gasto' && pagoOtro(F)) ? F.cuotas : 1,
     estado: F.estado === 'omitido' ? 'pagado' : F.estado, nota: F.nota.trim(), plantilla: F.plantilla || null, creado: prev?.creado || Date.now()};
   if (card) data.mesResumen = F.mesResumen;
+  if (F.tipo === 'gasto' && F.evento && EV(F.evento)){ data.evento = F.evento; data.fase = F.fase || (hoy() < EV(F.evento).desde ? 'pre' : 'viaje'); }
+  else if (prev && prev.evento && !prev.division){ data.evento = null; data.fase = null; }
   if (F.tipo === 'gasto' && F.splitOpen && !(F.split && F.split.con.length) && PERS().length){ toast('Elegí con quién lo compartís, o sacá el tilde'); return; }
   if (F.tipo === 'gasto' && F.split && F.split.con.length){
     const partes = {}; let suma = 0; for (const id of ['yo'].concat(F.split.con)){ const v = +F.split.partes[id] || 0; partes[id] = v; suma += v; }
@@ -1992,7 +2065,7 @@ async function enviarForm(){
   const editado = !!F.id, mp = isCard(data) ? addMes(mesResumen(data), 1) : null; cerrar();
   toast((editado ? 'Cambios guardados' : 'Movimiento guardado') + (mp && mp !== S.mes ? ` · en Movimientos figura en ${nombreMes(mp).toLowerCase()}, cuando se paga` : ''));
 }
-function cerrar(){ $('#overlay').innerHTML = ''; F = null; P = null; M = null; A = null; T = null; MO = null; K = null; SB = null; }
+function cerrar(){ $('#overlay').innerHTML = ''; E = null; V = null; LQ = null; F = null; P = null; M = null; A = null; T = null; MO = null; K = null; SB = null; }
 
 // ---------- Transferir entre cuentas (o entre monedas de una misma cuenta) ----------
 let M = null;
@@ -2307,12 +2380,384 @@ async function exportar(){
   if (await descargar(`gastos-${hoy()}.csv`, '﻿' + lines.join('\n'), 'text/csv')) toast('Archivo listo');
 }
 
+// ---------- Viajes y comidas con amigos ----------
+// Un viaje no mueve plata: tiene fechas, un presupuesto de viáticos y las personas con quienes vas (de tu lista de Personas).
+// Sus gastos son movimientos comunes con la marca evento (y fase: antes o durante el viaje): cuentan en tu mes como siempre,
+// y si los pagó otra persona (dividido con Lu, por ejemplo) quedan como deuda con ella, igual que cualquier gasto compartido.
+// Una comida o salida admite invitados temporales. Lo que pagás vos es un gasto común; lo que pagan otros queda solo en el evento.
+// Cuando saldás cuentas: si pagás vos, es un gasto; si te pagan, un ingreso.
+let E = null, V = null, LQ = null;
+const SVG_VIAJE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>';
+const SVG_GRUPO = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+const icoEv = e => `<span style="color:var(--viaje);display:inline-flex;vertical-align:-3px;margin-right:4px">${e.tipo === 'viaje' ? SVG_VIAJE : SVG_GRUPO}</span>`;
+const miNombre = () => S.cfg.miNombre || 'Gonza';
+function estadoEv(e){ const h = hoy(); if (e.cerrado) return 'archivado'; if (h < e.desde) return 'proximo'; if (h <= (e.hasta || e.desde)) return 'activo'; return 'terminado'; }
+const EST_LBL = {activo:'En curso', proximo:'Próximo', terminado:'Terminado', archivado:'Archivado'};
+const EST_PILL = {activo:'ev', proximo:'est', terminado:'pend', archivado:'est'};
+const rangoEv = e => e.hasta && e.hasta !== e.desde ? `${dia(e.desde)} al ${dia(e.hasta)}` : dia(e.desde);
+const enEv = (m, e) => m.moneda === e.moneda ? (+m.monto || 0) : (+m.monto || 0) * (m.tasa || tasaDe(m.moneda)) / (tasaDe(e.moneda) || 1);
+const fmtE = (n, e) => fmtEn(n, e.moneda);
+const nomP = (e, id) => id === 'yo' ? miNombre() : ((e.participantes || []).find(p => p.id === id)?.nombre || nomPer(id));
+const gastosEv = id => S.movs.filter(m => m.evento === id && m.tipo === 'gasto' && m.estado !== 'omitido' && !m.liq);
+// Tu parte de un gasto: en un viaje, según cómo lo dividiste (split); en una comida, según entre quiénes se repartió
+const parteMia = m => m.division ? (m.division.includes('yo') ? 1 / m.division.length : 0) : m.split ? (+(m.split.partes || {}).yo || 0) / 100 : 1;
+const quienPago = (m, e) => m.ajeno ? nomP(e, m.pagador) : pagoOtro(m) ? nomPer(m.split.pagador) : miNombre();
+
+// ---------- Cuentas de un viaje ----------
+function resumenViaje(e){
+  const gs = gastosEv(e.id), r = {pre:0, viaje:0, total:0, mia:0, n:gs.length};
+  for (const m of gs){ const v = enEv(m, e); r.total += v; r.mia += v * parteMia(m); if (m.fase === 'viaje') r.viaje += v; else r.pre += v; }
+  r.pres = +e.presupuesto || 0; r.queda = r.pres - r.viaje;
+  return r;
+}
+// Lo que cada persona del viaje te debe (+) o le debés (−) por los gastos de este viaje, en moneda principal
+function deudasViaje(e){
+  const gs = gastosEv(e.id), out = {};
+  for (const p of (e.participantes || []).filter(p => p.id !== 'yo')) out[p.id] = gs.reduce((a, m) => a + efectoPersona(m, p.id, '9999-12'), 0);
+  return out;
+}
+
+// ---------- Cuentas de una comida o salida (estilo Splitwise, con invitados temporales) ----------
+function repartir(c, ids){ const n = ids.length, b = Math.floor(c / n); let r = c - b * n; const o = {}; ids.forEach(id => { o[id] = b + (r > 0 ? 1 : 0); if (r > 0) r--; }); return o; }
+function balancesEv(e){ // en centavos: lo que pagó cada uno menos lo que consumió
+  const net = {}; (e.participantes || []).forEach(p => net[p.id] = 0);
+  for (const m of gastosEv(e.id)){
+    const c = Math.round(enEv(m, e) * 100), pg = m.pagador || 'yo', ids = m.division && m.division.length ? m.division : [pg];
+    net[pg] = (net[pg] || 0) + c;
+    for (const [id, x] of Object.entries(repartir(c, ids))) net[id] = (net[id] || 0) - x;
+  }
+  for (const l of e.liquidaciones || []){ const c = Math.round(l.monto * 100); net[l.de] = (net[l.de] || 0) + c; net[l.a] = (net[l.a] || 0) - c; }
+  return net;
+}
+function saldarEv(net){ // el que más debe le paga al que más le deben: como mucho una transferencia menos que la cantidad de personas
+  const d = [], a = [];
+  for (const [id, v] of Object.entries(net)){ if (v < 0) d.push({id, v:-v}); else if (v > 0) a.push({id, v}); }
+  d.sort((x, y) => y.v - x.v); a.sort((x, y) => y.v - x.v);
+  const out = []; let i = 0, j = 0;
+  while (i < d.length && j < a.length){ const x = Math.min(d[i].v, a[j].v); out.push({de:d[i].id, a:a[j].id, monto:x / 100}); d[i].v -= x; a[j].v -= x; if (!d[i].v) i++; if (!a[j].v) j++; }
+  return out;
+}
+
+function waTexto(e){
+  const gs = gastosEv(e.id).slice().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')), n = (e.participantes || []).length;
+  const total = gs.reduce((a, m) => a + enEv(m, e), 0), pag = {};
+  gs.forEach(m => { const q = quienPago(m, e); pag[q] = (pag[q] || 0) + enEv(m, e); });
+  let s = `${e.tipo === 'viaje' ? '✈️' : '🍽️'} *${e.nombre}* (${rangoEv(e)})\nTotal: ${fmtE(total, e)}${n > 1 ? ` entre ${n} personas` : ''}\n`;
+  if (e.tipo === 'viaje' && +e.presupuesto){ const r = resumenViaje(e); s += `Viáticos: ${fmtE(r.viaje, e)} de ${fmtE(r.pres, e)}\n`; }
+  s += `\n*Quién pagó*\n` + (Object.entries(pag).map(([q, v]) => `• ${q}: ${fmtE(v, e)}`).join('\n') || '• Nada todavía');
+  if (e.tipo !== 'viaje'){ const tr = saldarEv(balancesEv(e)); s += `\n\n*Para quedar a mano*\n` + (tr.length ? tr.map(x => `• ${nomP(e, x.de)} → ${nomP(e, x.a)}: ${fmtE(x.monto, e)}`).join('\n') : '• Estamos a mano 🙌'); }
+  if (gs.length) s += `\n\n_Detalle_\n` + gs.map(m => `– ${m.concepto}: ${fmtE(enEv(m, e), e)} (pagó ${quienPago(m, e)})`).join('\n');
+  return s;
+}
+
+// ---------- Inicio: resumen de cada viaje o comida vigente, con su botón para cargar gastos ----------
+function tarjetaViajes(){
+  // En el mes actual: todo lo que no está archivado. En cualquier mes: los viajes y salidas que caen en ese mes, aunque duren más de uno.
+  const cae = e => mesDe(e.desde) <= S.mes && mesDe(e.hasta || e.desde) >= S.mes;
+  const largo2 = e => mesDe(e.desde) !== mesDe(e.hasta || e.desde);
+  const delMes = e => gastosEv(e.id).filter(m => mesDe(m.fecha) === S.mes).reduce((a, m) => a + enEv(m, e), 0);
+  return (S.evs || []).filter(e => estadoEv(e) !== 'archivado' ? (S.mes === hoyMes() || cae(e)) : cae(e)).sort((a, b) => (a.desde || '').localeCompare(b.desde || '')).map(e => {
+    const st = estadoEv(e);
+    if (e.tipo !== 'viaje'){
+      const yo = (balancesEv(e).yo || 0) / 100, tot = gastosEv(e.id).reduce((a, m) => a + enEv(m, e), 0);
+      return `<section class="panel trip"><div class="tarj"><div><span class="label tl">${st === 'activo' ? 'Hoy' : st === 'proximo' ? dia(e.desde) : 'Terminó el ' + dia(e.hasta || e.desde)}</span><strong style="font-family:var(--f-display);font-size:18px">${icoEv(e)}${esc(e.nombre)}</strong><span class="note num">Total ${fmtE(tot, e)}${largo2(e) ? ` · en ${esc(nombreMes(S.mes).toLowerCase())} ${fmtE(delMes(e), e)}` : ''} · ${yo > 0.004 ? 'te deben ' + fmtE(yo, e) : yo < -0.004 ? 'debés ' + fmtE(-yo, e) : 'a mano'}</span></div>
+        <div class="chips">${st !== 'terminado' && st !== 'archivado' ? `<button class="btn via" data-act="evadd" data-id="${e.id}">+ Gasto</button>` : ''}<button class="btn" data-act="evver" data-id="${e.id}">${st === 'terminado' ? 'Saldar y archivar' : 'Ver'}</button></div></div></section>`;
+    }
+    const r = resumenViaje(e), largo = diasEntre(e.desde, e.hasta || e.desde) + 1, hoyN = diasEntre(e.desde, hoy()) + 1;
+    const lbl = st === 'archivado' ? `${rangoEv(e)} · archivado` : st === 'activo' ? `Viaje en curso · día ${hoyN} de ${largo}` : st === 'proximo' ? `Próximo viaje · en ${diasEntre(hoy(), e.desde)} ${diasEntre(hoy(), e.desde) === 1 ? 'día' : 'días'}` : `Terminó el ${dia(e.hasta)}`;
+    const pct = r.pres ? Math.max(0, Math.min(100, r.viaje / r.pres * 100)) : 0;
+    return `<section class="panel trip">
+      <div class="tarj"><div><span class="label tl">${lbl}</span><strong style="font-family:var(--f-display);font-size:20px">${icoEv(e)}${esc(e.nombre)}</strong></div>
+        ${r.pres ? `<div style="text-align:right"><span class="label">Quedan de viáticos</span><div class="big2 num"${r.queda < 0 ? ' style="color:var(--bad)"' : ''}>${fmtE(r.queda, e)}</div></div>` : ''}</div>
+      ${r.pres ? `<div class="wbar" role="img" aria-label="Viáticos: ${fmtE(r.viaje, e)} de ${fmtE(r.pres, e)}"><i style="width:${pct.toFixed(1)}%"></i></div><div class="rleyenda num"><span>viáticos ${fmtE(r.viaje, e)}</span><span>presupuesto ${fmtE(r.pres, e)}</span></div>` : ''}
+      ${r.pres ? ritmoViaje(e, r, st) : ''}
+      <p class="note num" style="margin:0">Total del viaje <strong style="color:var(--ink)">${fmtE(r.total, e)}</strong> · antes ${fmtE(r.pre, e)} · durante ${fmtE(r.viaje, e)}${largo2(e) ? ` · cargado en ${esc(nombreMes(S.mes).toLowerCase())} ${fmtE(delMes(e), e)}` : ''}</p>
+      <div class="chips">${st === 'archivado' ? '' : st === 'terminado' ? `<button class="btn" data-act="evcerrar" data-id="${e.id}">Archivar</button>` : `<button class="btn via" data-act="evadd" data-id="${e.id}">+ Gasto ${st === 'activo' ? 'del viaje' : 'previo'}</button>`}<button class="btn" data-act="evver" data-id="${e.id}">Ver viaje</button></div>
+    </section>`;
+  }).join('');
+}
+// Ritmo de los viáticos: lo previsto por día, lo que venís gastando por día y lo que te queda por día en los días que faltan
+function ritmoViaje(e, r, st){
+  const largo = diasEntre(e.desde, e.hasta || e.desde) + 1, porDia = r.pres / largo;
+  const box = (l, v, s, cls) => `<div class="mini${cls ? ' ' + cls : ''}"><span class="label">${l}</span><strong class="num">${v}</strong><span class="note">${s}</span></div>`;
+  if (st !== 'activo') return `<div class="minis">${box('Presupuesto por día', fmtE(porDia, e), `${largo} ${largo === 1 ? 'día' : 'días'} de viaje`)}</div>`;
+  const llevo = Math.min(largo, diasEntre(e.desde, hoy()) + 1), faltan = Math.max(1, largo - llevo + 1);
+  const gastoDia = r.viaje / llevo, quedaDia = r.queda / faltan;
+  return `<div class="minis">${box('Presupuesto por día', fmtE(porDia, e), `${largo} días de viaje`)}${box('Venís gastando', fmtE(gastoDia, e) + ' / día', `en ${llevo} ${llevo === 1 ? 'día' : 'días'}`, gastoDia > porDia + 0.005 ? 'mal' : 'bien')}${box('Te quedan por día', fmtE(quedaDia, e), `${faltan} ${faltan === 1 ? 'día' : 'días'} (con hoy) · ${fmtE(r.queda, e)}`, quedaDia < porDia - 0.005 ? 'mal' : 'bien')}</div>`;
+}
+const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T12:00')) / 864e5);
+
+// ---------- En la hoja de un gasto que viene del botón de un viaje ----------
+// El + de siempre no pregunta nada de viajes: solo el botón amarillo de cada viaje lo asocia.
+function bloqueViaje(){
+  const e = F.evento ? EV(F.evento) : null;
+  if (!e || e.tipo !== 'viaje') return '';
+  if (!F.fase) F.fase = hoy() < e.desde ? 'pre' : 'viaje';
+  const r = resumenViaje(e), prev = F.id ? S.movs.find(m => m.id === F.id) : null, ya = prev && prev.evento === e.id && prev.fase === 'viaje' ? enEv(prev, e) : 0;
+  const nota = F.fase === 'viaje' ? `Resta de los viáticos${r.pres ? `: quedan ${fmtE(r.queda + ya, e)} antes de este gasto` : ''}.` : 'Suma al total del viaje, no a los viáticos.';
+  return `<div class="field"><span class="label">${icoEv(e)}${esc(e.nombre)}</span>${seg('f', 'fase', [['pre', 'Antes del viaje'], ['viaje', 'Durante el viaje']], F.fase)}
+    <span class="note">${esc(nota)} En tus gastos aparece como siempre.${F.id ? ' <button type="button" class="lnk" data-f="evento" data-v="">Sacarlo del viaje</button>' : ''}</span></div>`;
+}
+function nuevoGastoViaje(e, fase){
+  const mon = e.moneda, cta = (cuentasDia().find(c => c.monedas.includes(mon)) || {}).id;
+  const con = (e.participantes || []).filter(p => p.id !== 'yo' && PER(p.id)).map(p => p.id);
+  // Viaje con otra persona: por defecto compartido en partes iguales y lo pagás vos
+  nuevoForm({evento:e.id, fase, ...(cta ? {cuenta:cta, moneda:mon} : {}), ...(con.length ? {split:{con, pagador:'yo', partes:{}, modo:'div'}} : {})});
+  if (con.length && F && F.split){ partesIguales(); abrirHoja(true); }
+}
+
+// ---------- Pantalla Viajes ----------
+function vEventos(){
+  if (S.evSel){ const e = EV(S.evSel); if (e) return vEvento(e); S.evSel = null; }
+  const evs = S.evs || [];
+  const vivos = evs.filter(e => estadoEv(e) !== 'archivado').sort((a, b) => (a.desde || '').localeCompare(b.desde || ''));
+  const arch = evs.filter(e => estadoEv(e) === 'archivado').sort((a, b) => (b.desde || '').localeCompare(a.desde || ''));
+  const meses = [...new Set(arch.flatMap(e => [mesDe(e.desde), mesDe(e.hasta || e.desde)]))].sort().reverse();
+  const vis = S.evMes ? arch.filter(e => mesDe(e.desde) <= S.evMes && mesDe(e.hasta || e.desde) >= S.evMes) : arch;
+  const fila = e => { const st = estadoEv(e), tot = gastosEv(e.id).reduce((a, m) => a + enEv(m, e), 0); return `<div class="row click" data-act="evver" data-id="${e.id}"><div class="t">${icoEv(e)}${esc(e.nombre)}<span class="pill ${EST_PILL[st]}">${EST_LBL[st]}</span></div><div class="m">${rangoEv(e)} · ${e.tipo === 'viaje' ? 'Viaje' : 'Comida o salida'}${(e.participantes || []).length > 1 ? ` · con ${esc((e.participantes || []).filter(p => p.id !== 'yo').map(p => p.nombre).join(', '))}` : ''}</div><div class="a num">${fmtE(tot, e)}</div></div>`; };
+  return `
+  <div class="top"><h1 style="font-size:22px">Viajes y salidas</h1><div class="chips"><button class="btn via" data-act="evnuevo" data-tipo="viaje">+ Viaje</button><button class="btn" data-act="evnuevo" data-tipo="evento">+ Comida o salida</button></div></div>
+  <section class="panel"><h2>En curso y próximos</h2><div class="list">${vivos.length ? vivos.map(fila).join('') : '<p class="empty">No hay viajes ni salidas activas. Al crear uno aparece en el inicio con su botón para cargar gastos.</p>'}</div></section>
+  <section class="panel"><h2>Archivados <span>${arch.length}</span></h2>
+    ${meses.length ? `<div class="chips" style="margin-bottom:6px"><button class="chip" data-act="evmes" data-mk="" aria-pressed="${!S.evMes}">Todos</button>${meses.map(mk => `<button class="chip" data-act="evmes" data-mk="${mk}" aria-pressed="${S.evMes === mk}">${esc(nombreMes(mk))}</button>`).join('')}</div>` : ''}
+    <div class="list">${vis.length ? vis.map(fila).join('') : '<p class="empty">Cuando archivás un viaje o una salida, queda acá y deja de aparecer en el inicio.</p>'}</div></section>`;
+}
+function vEvento(e){
+  const st = estadoEv(e), viaje = e.tipo === 'viaje', abierto = st !== 'archivado', parts = e.participantes || [];
+  const gs = gastosEv(e.id).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '') || (b.creado || 0) - (a.creado || 0));
+  const tile = (l, v, s, mal) => `<div class="tile"><span class="label">${l}</span><span class="v num"${mal ? ' style="color:var(--bad)"' : ''}>${v}</span>${s ? `<span class="note">${s}</span>` : ''}</div>`;
+  const filaG = m => {
+    const card = isCard(m), medio = m.ajeno || pagoOtro(m) ? `pagó ${quienPago(m, e)}` : card ? nomTj(m.tarjeta) : nomCta(m.cuenta), pm = parteMia(m);
+    const act = viaje ? `data-act="edit" data-id="${m.id}"` : `data-act="evgasto" data-id="${m.id}"`;
+    return `<div class="row click" ${act}><div class="t">${esc(m.concepto)}</div><div class="m">${dia(m.fecha)} · ${esc(nomCat(m.cat))} · ${esc(medio)}${pm < 1 ? ` · tu parte ${fmtE(enEv(m, e) * pm, e)}` : ''}</div><div class="a num">${fmtE(enEv(m, e), e)}</div></div>`;
+  };
+  const lista = (t, xs, vacio, boton) => `<section class="panel"><h2>${t} <span class="num">${fmtE(xs.reduce((a, m) => a + enEv(m, e), 0), e)}</span></h2><div class="list">${xs.length ? xs.map(filaG).join('') : `<p class="empty">${vacio}</p>`}</div>${boton && abierto ? `<div class="chips" style="margin-top:8px">${boton}</div>` : ''}</section>`;
+  let cuerpo;
+  if (viaje){
+    const r = resumenViaje(e), deu = deudasViaje(e);
+    cuerpo = `<div class="grid4">${tile('Viáticos', r.pres ? fmtE(r.queda, e) : '—', r.pres ? `quedan de ${fmtE(r.pres, e)}` : 'sin presupuesto', r.queda < 0)}${tile('Durante el viaje', fmtE(r.viaje, e), 'lo cargado con el botón del viaje')}${tile('Antes del viaje', fmtE(r.pre, e), 'vuelos, reservas…')}${tile('Total del viaje', fmtE(r.total, e), `tu parte ${fmtE(r.mia, e)}`)}</div>
+    ${lista('Durante el viaje', gs.filter(m => m.fase === 'viaje'), 'Lo que cargues con el botón del viaje aparece acá y resta de los viáticos.', `<button class="btn via" data-act="evaddfase" data-id="${e.id}" data-fase="viaje">+ Gasto del viaje</button>`)}
+    ${lista('Antes del viaje', gs.filter(m => m.fase !== 'viaje'), 'Vuelos, reservas, seguro… cargalos con el botón de gasto previo.', `<button class="btn via" data-act="evaddfase" data-id="${e.id}" data-fase="pre">+ Gasto previo</button>`)}
+    <section class="panel"><h2>Con quién</h2>
+      <div class="chips">${parts.filter(p => p.id !== 'yo').map(p => `<span class="ptc">${esc(nomPer(p.id))}${abierto ? `<button type="button" data-act="evpartdel" data-id="${e.id}" data-pid="${p.id}" aria-label="Quitar a ${esc(p.nombre)}">✕</button>` : ''}</span>`).join('') || '<span class="note">Viajás solo.</span>'}</div>
+      ${abierto && PERS().some(x => !parts.some(p => p.id === x.id)) ? `<div class="chips" style="margin-top:8px">${PERS().filter(x => !parts.some(p => p.id === x.id)).map(x => `<button type="button" class="chip" data-act="evpartadd" data-id="${e.id}" data-c="${x.id}">+ ${esc(x.nombre)}</button>`).join('')}</div>` : ''}
+      ${!PERS().length ? '<p class="note" style="margin:6px 0 0">Para compartir un viaje, agregá a la persona en Ajustes → Personas.</p>' : ''}
+      ${Object.keys(deu).length ? `<div class="list" style="margin-top:8px">${Object.entries(deu).map(([pid, v]) => `<div class="row click" data-act="ir" data-filtro="persona:${pid}"><div class="t">${Math.abs(v) < 1 ? `Con ${esc(nomPer(pid))} están a mano` : v > 0 ? `${esc(nomPer(pid))} te debe` : `Le debés a ${esc(nomPer(pid))}`}</div><div class="m">por este viaje · se salda en Personas, como siempre</div><div class="a num ${v > 0 ? 'pos' : ''}">${Math.abs(v) < 1 ? '' : fmt(Math.abs(v))}</div></div>`).join('')}</div>` : ''}
+      <p class="note" style="margin:8px 0 0">Los gastos del viaje vienen divididos en partes iguales y pagados por vos; si lo pagó otra persona, cambiá quién pagó: no aparece en tus gastos, solo en el viaje y como deuda. Cuando le pagues, el pago sí aparece en tus gastos.</p></section>`;
+  } else {
+    const net = balancesEv(e), tr = saldarEv(net), yo = (net.yo || 0) / 100, total = gs.reduce((a, m) => a + enEv(m, e), 0);
+    const balHtml = parts.map(p => { const v = (net[p.id] || 0) / 100, col = v > 0.004 ? 'var(--good)' : v < -0.004 ? 'var(--bad)' : 'var(--muted)'; return `<div class="row"><div class="t">${esc(nomP(e, p.id))}${p.invitado ? '<span class="tag">temporal</span>' : ''}</div><div class="m">${v > 0.004 ? 'le deben' : v < -0.004 ? 'debe' : 'a mano'}</div><div class="a num" style="color:${col}">${v > 0.004 ? '+ ' : ''}${fmtE(v, e)}</div></div>`; }).join('');
+    const trHtml = tr.length ? tr.map(x => `<div class="tr"><span><strong>${esc(nomP(e, x.de))}</strong> → <strong>${esc(nomP(e, x.a))}</strong></span><span style="display:flex;gap:8px;align-items:center"><span class="num" style="font-weight:600">${fmtE(x.monto, e)}</span>${abierto ? `<button class="btn ok" data-act="evliq" data-id="${e.id}" data-de="${x.de}" data-a="${x.a}" data-v="${x.monto}">Saldado</button>` : ''}</span></div>`).join('') : '<p class="empty">Están todos a mano.</p>';
+    const libres = PERS().filter(x => !parts.some(p => p.id === x.id));
+    cuerpo = `<div class="grid4">${tile('Total', fmtE(total, e), `${gs.length} ${gs.length === 1 ? 'gasto' : 'gastos'}`)}${tile('Pagaste vos', fmtE(gs.filter(m => !m.ajeno).reduce((a, m) => a + enEv(m, e), 0), e), 'está en tus gastos')}${tile(yo >= 0 ? 'Te deben' : 'Debés', fmtE(Math.abs(yo), e), '', yo < -0.004)}${tile('Personas', String(parts.length), parts.some(p => p.invitado) ? 'con invitados temporales' : '')}</div>
+    ${lista('Gastos', gs, 'Todavía no hay gastos.', `<button class="btn via" data-act="evadd" data-id="${e.id}">+ Gasto</button>`)}
+    <section class="panel"><h2>Participantes <span>${parts.length}</span></h2>
+      <div class="chips">${parts.map(p => `<span class="ptc">${esc(p.id === 'yo' ? miNombre() + ' (vos)' : p.nombre)}${p.invitado ? '<span class="tag">temporal</span>' : ''}${p.id === 'yo' || !abierto ? '' : `<button type="button" data-act="evpartdel" data-id="${e.id}" data-pid="${p.id}" aria-label="Quitar a ${esc(p.nombre)}">✕</button>`}</span>`).join('')}</div>
+      ${abierto && libres.length ? `<div class="chips" style="margin-top:8px">${libres.map(x => `<button type="button" class="chip" data-act="evpartadd" data-id="${e.id}" data-c="${x.id}">+ ${esc(x.nombre)}</button>`).join('')}</div>` : ''}
+      ${abierto ? `<div class="filters" style="margin-top:8px"><input class="inp" id="ev-inv" placeholder="Nombre de un invitado" autocomplete="off" style="flex:1;max-width:none"><button class="btn" data-act="evinv" data-id="${e.id}">Agregar invitado temporal</button></div>
+      <p class="note" style="margin:6px 0 0">Un invitado temporal existe solo en esta salida; no se agrega a tus Personas.</p>` : ''}</section>
+    <section class="panel"><h2>Quién le debe a quién</h2><div class="list">${balHtml}</div>
+      <h3 class="label" style="margin:14px 0 8px">Para quedar a mano · ${tr.length} ${tr.length === 1 ? 'pago' : 'pagos'}</h3><div style="display:grid;gap:6px">${trHtml}</div>
+      <p class="note" style="margin:8px 0 0">Con la menor cantidad de pagos posible. Si el pago es tuyo, al marcarlo queda como gasto; si te pagan a vos, como ingreso.</p></section>`;
+  }
+  const wa = waTexto(e);
+  return `
+  <div class="top"><button class="btn ghost" data-act="evvolver">‹ Viajes y salidas</button><span style="display:flex;gap:8px;align-items:center"><span class="pill ${EST_PILL[st]}">${EST_LBL[st]}</span><button class="btn" data-act="evedit" data-id="${e.id}">Editar</button></span></div>
+  <section class="panel trip"><h1 style="font-size:24px">${icoEv(e)}${esc(e.nombre)}</h1>
+    <p class="note" style="margin:0">${rangoEv(e)} · ${viaje ? 'viaje' : 'comida o salida'} en ${esc(MON(e.moneda).nombre.toLowerCase())}</p></section>
+  ${cuerpo}
+  <section class="panel"><h2>Resumen para WhatsApp</h2>
+    <textarea class="wa" id="wa-txt" readonly aria-label="Resumen para WhatsApp">${esc(wa)}</textarea>
+    <div class="filters" style="margin-top:8px"><button class="btn wab" data-act="evcopy">Copiar resumen</button><a class="btn" href="https://wa.me/?text=${encodeURIComponent(wa)}" target="_blank" rel="noopener">Abrir en WhatsApp</a></div></section>
+  <div class="filters">${abierto ? `<button class="btn" data-act="evcerrar" data-id="${e.id}">Archivar</button>` : `<button class="btn" data-act="evreabrir" data-id="${e.id}">Reabrir</button>`}<button class="btn danger" data-act="evdel" data-id="${e.id}">Borrar ${viaje ? 'viaje' : 'salida'}</button></div>
+  <p class="note">${viaje ? 'Borrar el viaje no borra sus gastos: quedan en tus movimientos, sin el viaje.' : 'Borrar la salida deja en tus movimientos lo que pagaste vos y borra lo que pagaron otros.'}</p>`;
+}
+
+// ---------- Hoja: gasto de una comida o salida ----------
+function abrirEvGasto(e, m, re){
+  if (!e) return;
+  if (!re){
+    if (!S.cfg.cuentas.length){ toast('Primero agregá una cuenta en Ajustes'); return; }
+    E = m ? {id:m.id, ev:e.id, montoTxt:dec(m.monto), moneda:m.moneda, concepto:m.concepto || '', cat:m.cat, pagador:m.pagador || 'yo', medio: m.tarjeta ? 't:' + m.tarjeta : 'c:' + (m.cuenta || cuentaDefecto()), division:[...(m.division || ['yo'])], fecha:m.fecha}
+      : {id:null, ev:e.id, montoTxt:'', moneda:e.moneda, concepto:'', cat: CAT('Alimentación') ? 'Alimentación' : catDefecto(), pagador:'yo', medio:'c:' + cuentaDefecto(), division:(e.participantes || []).map(p => p.id), fecha: hoy() < e.desde || hoy() > (e.hasta || e.desde) ? e.desde : hoy()};
+  }
+  const parts = e.participantes || [];
+  const opts = S.cfg.cuentas.map(c => ['c:' + c.id, c.nombre]).concat(S.cfg.tarjetas.map(t => ['t:' + t.id, t.nombre]));
+  const ms = E.pagador === 'yo' ? monedasDe(E.medio.slice(0, 1) === 't' ? 't' : 'c', E.medio.slice(2)) : [...new Set([e.moneda, monP().id])];
+  if (!ms.includes(E.moneda)) E.moneda = ms.includes(e.moneda) ? e.moneda : ms.includes(monP().id) ? monP().id : ms[0];
+  $('#overlay').innerHTML = `<div class="scrim" data-act="close"><form class="sheet${re ? '' : ' anim'}" id="gsheet" role="dialog" aria-modal="true" aria-label="Gasto de ${esc(e.nombre)}" novalidate>
+    <header><h3>${icoEv(e)}${E.id ? 'Editar gasto' : 'Gasto'} · ${esc(e.nombre)}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
+    <div class="amount"><button type="button" data-act="evmon" aria-label="Cambiar moneda"${ms.length < 2 ? ' tabindex="-1"' : ''}>${esc(monLbl(E.moneda))}</button><input id="e-monto" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(E.montoTxt)}" aria-label="Monto"></div>
+    <div class="field"><span class="label">Categoría</span>${chipsDe('e', 'cat', CATS().map(c => [c.id, c.nombre]), E.cat)}</div>
+    <div class="field"><label for="e-concepto">En qué</label><input class="inp" id="e-concepto" autocomplete="off" value="${esc(E.concepto)}" placeholder="Carne, bebida, postre…"></div>
+    <div class="field"><span class="label">¿Quién pagó?</span>${chipsDe('e', 'pagador', parts.map(p => [p.id, p.id === 'yo' ? 'Yo' : p.nombre]), E.pagador)}</div>
+    ${E.pagador === 'yo' ? `<div class="field"><span class="label">Pagado con</span>${chipsDe('e', 'medio', opts, E.medio)}</div>` : ''}
+    <div class="field"><span class="label">Dividir en partes iguales entre</span><div class="chips">${parts.map(p => `<button type="button" class="chip" data-e="div" data-v="${p.id}" aria-pressed="${E.division.includes(p.id)}">${esc(p.id === 'yo' ? 'Yo' : p.nombre)}</button>`).join('')}</div><span class="note num" id="e-parte"></span></div>
+    <div class="field"><label for="e-fecha">Fecha</label><input class="inp" id="e-fecha" type="date" min="${inicio()}-01" value="${E.fecha}"></div>
+    <p class="note" style="margin:0;padding:10px 12px;border-radius:10px;background:var(--viaje-soft);color:var(--ink)">${E.pagador === 'yo' ? 'Lo pagaste vos: aparece en tus gastos como siempre. Lo que les toca a los demás queda para saldar en la salida.' : `Lo pagó ${esc(nomP(e, E.pagador))}: no aparece en tus gastos, solo en esta salida.`}</p>
+    <div class="actions">${E.id ? '<button type="button" class="btn danger" data-act="evgdel">Borrar</button>' : ''}<button type="submit" class="btn primary">Guardar</button></div>
+  </form></div>`;
+  updEv();
+  if (!re && !E.id) setTimeout(() => $('#e-monto')?.focus(), 60);
+}
+function leerEv(){ E.montoTxt = $('#e-monto')?.value ?? E.montoTxt; E.concepto = $('#e-concepto')?.value ?? E.concepto; E.fecha = $('#e-fecha')?.value || E.fecha; }
+function updEv(){
+  const pe = $('#e-parte'); if (!pe || !E) return;
+  const n = parseNum($('#e-monto')?.value), nd = E.division.length;
+  pe.textContent = isFinite(n) && n > 0 && nd ? `${fmtEn(n / nd, E.moneda)} cada uno${E.division.includes('yo') ? '' : ' · a vos no te toca'}` : '';
+}
+async function enviarEvGasto(){
+  leerEv(); const e = EV(E.ev); if (!e) return;
+  const monto = parseNum(E.montoTxt);
+  if (!isFinite(monto) || monto <= 0){ toast('Escribí un monto mayor a cero'); $('#e-monto')?.focus(); return; }
+  if (!E.division.length){ toast('Elegí entre quiénes se divide'); return; }
+  if (!E.fecha){ toast('Elegí una fecha'); return; }
+  const yo = E.pagador === 'yo', tp = E.medio.slice(0, 1), mid = E.medio.slice(2), card = yo && tp === 't';
+  const prev = E.id ? S.movs.find(m => m.id === E.id) : null;
+  const data = {fecha:E.fecha, tipo:'gasto', cat:E.cat, concepto: E.concepto.trim() || nomCat(E.cat), monto, moneda:E.moneda,
+    tasa: esPpal(E.moneda) ? 1 : (prev && prev.moneda === E.moneda && prev.tasa ? prev.tasa : tasaDe(E.moneda)),
+    cuenta: yo && !card ? mid : null, tarjeta: card ? mid : null, cuotas:1, estado:'pagado', nota: prev?.nota || '', plantilla:null, creado: prev?.creado || Date.now(),
+    evento:e.id, pagador:E.pagador, division:[...E.division], ajeno:!yo};
+  if (card) data.mesResumen = mesResumen({...data, mesResumen:null});
+  const msg = yo ? `Gasto en ${e.nombre}: está en tus gastos` : `Gasto de ${nomP(e, E.pagador)} en ${e.nombre}: solo en la salida`;
+  if (await guardar(E.id, data)){ cerrar(); toast(msg); }
+}
+
+// ---------- Hoja: nuevo viaje o salida, y editar ----------
+function abrirEvento(tipo, re, ed){
+  if (ed) V = {id:ed.id, edit:true, tipo:ed.tipo, nombre:ed.nombre, desde:ed.desde, hasta:ed.hasta || '', moneda:ed.moneda, presTxt: ed.presupuesto ? dec(ed.presupuesto) : '', parts:[], invitados:[], invTxt:''};
+  else if (!re){
+    if (!S.cfg.cuentas.length){ toast('Primero agregá una cuenta en Ajustes'); return; }
+    const usd = S.cfg.monedas.find(m => m.id === 'USD');
+    V = {tipo, nombre:'', desde:hoy(), hasta: tipo === 'viaje' ? '' : hoy(), moneda: tipo === 'viaje' && usd ? usd.id : monP().id, presTxt:'', parts:[], invitados:[], invTxt:''};
+  }
+  const viaje = V.tipo === 'viaje', conMovs = V.edit && S.movs.some(m => m.evento === V.id);
+  $('#overlay').innerHTML = `<div class="scrim" data-act="close"><form class="sheet${re ? '' : ' anim'}" id="vsheet" role="dialog" aria-modal="true" aria-label="${V.edit ? 'Editar' : 'Nuevo viaje o salida'}" novalidate>
+    <header><h3>${V.edit ? `Editar ${viaje ? 'viaje' : 'salida'}` : viaje ? 'Nuevo viaje' : 'Nueva comida o salida'}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
+    ${V.edit ? '' : seg('w', 'tipo', [['viaje', 'Viaje'], ['evento', 'Comida o salida']], V.tipo)}
+    <div class="field"><label for="v-nombre">Nombre</label><input class="inp" id="v-nombre" autocomplete="off" value="${esc(V.nombre)}" placeholder="${viaje ? 'Florianópolis, Buenos Aires…' : 'Cena de viernes, asado…'}"></div>
+    <div class="two"><div class="field"><label for="v-desde">${viaje ? 'Sale el' : 'Fecha'}</label><input class="inp" id="v-desde" type="date" min="${inicio()}-01" value="${esc(V.desde)}"></div>
+      <div class="field"><label for="v-hasta">${viaje ? 'Vuelve el' : 'Hasta (opcional)'}</label><input class="inp" id="v-hasta" type="date" min="${inicio()}-01" value="${esc(V.hasta)}"></div></div>
+    <div class="field"><span class="label">Moneda</span>${conMovs ? `<span class="note">${esc(MON(V.moneda).nombre)}. No se puede cambiar porque ya tiene gastos.</span>` : chipsDe('w', 'moneda', S.cfg.monedas.map(m => [m.id, m.nombre]), V.moneda)}</div>
+    ${viaje ? `<div class="field"><label for="v-pres">Presupuesto de viáticos (${esc(monLbl(V.moneda))})</label><input class="inp" id="v-pres" inputmode="decimal" autocomplete="off" value="${esc(V.presTxt)}" placeholder="Opcional">
+      <span class="note">Lo que pensás gastar durante el viaje: comidas, transporte, salidas. No mueve plata; solo compara con lo que cargues con el botón del viaje.</span></div>` : ''}
+    ${V.edit ? '<p class="note" style="margin:0">Las personas se cambian en la pantalla del viaje o la salida.</p>' : `<div class="field"><span class="label">Con quién</span>
+      ${PERS().length ? `<div class="chips">${PERS().map(x => `<button type="button" class="chip" data-w="part" data-v="${x.id}" aria-pressed="${V.parts.includes(x.id)}">${esc(x.nombre)}</button>`).join('')}</div>` : `<span class="note">No tenés Personas cargadas. ${viaje ? 'Para compartir un viaje, agregalas en Ajustes → Personas.' : ''}</span>`}
+      ${!viaje ? `${V.invitados.length ? `<div class="chips">${V.invitados.map(g => `<span class="ptc">${esc(g.nombre)}<span class="tag">temporal</span><button type="button" data-w="invdel" data-v="${g.id}" aria-label="Quitar a ${esc(g.nombre)}">✕</button></span>`).join('')}</div>` : ''}
+      <div class="filters"><input class="inp" id="v-inv" autocomplete="off" placeholder="Invitado temporal" value="${esc(V.invTxt)}" style="flex:1;max-width:none"><button type="button" class="btn" data-act="vinv">Agregar</button></div>
+      <span class="note">Los invitados temporales existen solo en esta salida.</span>` : '<span class="note">Un viaje se comparte solo con tus Personas.</span>'}</div>`}
+    <div class="actions"><button type="submit" class="btn primary">${V.edit ? 'Guardar cambios' : viaje ? 'Crear viaje' : 'Crear'}</button></div>
+  </form></div>`;
+  if (!re && !ed) setTimeout(() => $('#v-nombre')?.focus(), 60);
+}
+function leerV(){ V.nombre = $('#v-nombre')?.value ?? V.nombre; V.desde = $('#v-desde')?.value ?? V.desde; V.hasta = $('#v-hasta')?.value ?? V.hasta; V.presTxt = $('#v-pres')?.value ?? V.presTxt; V.invTxt = $('#v-inv')?.value ?? V.invTxt; }
+async function enviarEvento(){
+  leerV(); const nombre = V.nombre.trim(), viaje = V.tipo === 'viaje';
+  if (!nombre){ toast('Poné un nombre'); $('#v-nombre')?.focus(); return; }
+  if (!V.desde){ toast('Elegí la fecha'); return; }
+  const hasta = V.hasta || V.desde;
+  if (hasta < V.desde){ toast(viaje ? 'La vuelta es antes de la salida' : 'La fecha de fin es anterior al inicio'); return; }
+  const pres = viaje && String(V.presTxt).trim() ? parseNum(V.presTxt) : 0;
+  if (!(pres >= 0)){ toast('Revisá el presupuesto'); return; }
+  if (!S.db){ toast('Sin conexión con la base de datos'); return; }
+  if (V.edit){
+    try { await S.db.collection('eventos').doc(V.id).update({nombre, desde:V.desde, hasta, moneda:V.moneda, presupuesto:pres}); } catch(err){ toast('No se pudo guardar'); return; }
+    cerrar(); toast('Cambios guardados'); return;
+  }
+  if (!S.cfgExiste && !(await guardarCfg({}))) return;
+  const id = genId('ev');
+  const parts = [{id:'yo', nombre:miNombre()}].concat(V.parts.map(pid => PER(pid)).filter(Boolean).map(x => ({id:x.id, nombre:x.nombre})), viaje ? [] : V.invitados);
+  const doc = {tipo:V.tipo, nombre, desde:V.desde, hasta, moneda:V.moneda, participantes:parts, liquidaciones:[], cerrado:false, creado:Date.now()};
+  if (viaje) doc.presupuesto = pres;
+  try { await S.db.collection('eventos').doc(id).set(doc); } catch(err){ toast('No se pudo crear. Probá de nuevo.'); return; }
+  cerrar(); location.hash = '#inicio'; S.mes = hoyMes(); render(); window.scrollTo(0, 0);
+  toast(viaje ? 'Viaje creado: está en el inicio con su botón para cargar gastos' : 'Creada: está en el inicio con su botón para cargar gastos');
+}
+
+// ---------- Saldar cuentas en una salida ----------
+function abrirLiq(e, de, a, monto, re){
+  if (!re) LQ = {ev:e.id, de, a, monto, cuenta:(cuentasDia().find(c => c.monedas.includes(e.moneda)) || {}).id || cuentaDefecto()};
+  const pago = LQ.de === 'yo';
+  $('#overlay').innerHTML = `<div class="scrim" data-act="close"><div class="sheet${re ? '' : ' anim'}" role="dialog" aria-modal="true" aria-label="Registrar pago">
+    <header><h3>${pago ? `Le pagaste a ${esc(nomP(e, LQ.a))}` : `${esc(nomP(e, LQ.de))} te pagó`}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
+    <p style="margin:0" class="num"><strong>${fmtE(LQ.monto, e)}</strong> · ${esc(e.nombre)}</p>
+    <div class="field"><span class="label">${pago ? 'Salió de' : 'Entró en'}</span>${chipsDe('lq', 'cuenta', S.cfg.cuentas.map(c => [c.id, c.nombre]), LQ.cuenta)}</div>
+    <p class="note" style="margin:0">${pago ? 'Queda en tus gastos.' : 'Queda como ingreso.'}</p>
+    <div class="actions"><button type="button" class="btn ghost" data-act="close">Cancelar</button><button type="button" class="btn primary" data-act="evliqok">Registrar</button></div></div></div>`;
+}
+async function guardarLiq(e, de, a, monto, cuenta){
+  const l = {id:genId('l'), de, a, monto, fecha:hoy()};
+  try { await S.db.collection('eventos').doc(e.id).update({liquidaciones:(e.liquidaciones || []).concat([l])}); } catch(err){ toast('No se pudo guardar'); return false; }
+  if (cuenta){
+    const pago = de === 'yo', mc = monedasDe('c', cuenta), mon = mc.includes(e.moneda) ? e.moneda : (mc.includes(monP().id) ? monP().id : mc[0]);
+    const mm = mon === e.moneda ? monto : Math.round(convierte(monto, e.moneda, mon) * 100) / 100;
+    const cat = (gastosEv(e.id)[0] || {}).cat || catDefecto();
+    await guardar(null, {fecha:hoy(), tipo: pago ? 'gasto' : 'ingreso', cat: pago ? cat : 'Ingreso', concepto: pago ? `Pago a ${nomP(e, a)} · ${e.nombre}` : `Cobro a ${nomP(e, de)} · ${e.nombre}`,
+      monto:mm, moneda:mon, tasa: esPpal(mon) ? 1 : tasaDe(mon), cuenta, tarjeta:null, cuotas:1, estado:'pagado', nota:'', plantilla:null, creado:Date.now(), evento:e.id, liq:l.id});
+  }
+  return true;
+}
+async function borrarEvento(e){
+  for (const m of S.movs.filter(m => m.evento === e.id)){
+    if (m.ajeno) await S.db.collection(COL.movs).doc(m.id).delete();
+    else await S.db.collection(COL.movs).doc(m.id).update({evento:null, fase:null, pagador:null, division:null, ajeno:null, liq:null});
+  }
+  await S.db.collection('eventos').doc(e.id).delete();
+}
+
+// Acciones del módulo (devuelve true si la atendió)
+async function accionEventos(a, t){
+  const e = t.dataset.id ? EV(t.dataset.id) : null;
+  if (a === 'evnuevo'){ abrirEvento(t.dataset.tipo || 'viaje'); return true; }
+  if (a === 'evver'){ S.evSel = t.dataset.id; S.keepSel = true; if (location.hash === '#eventos') render(); else location.hash = '#eventos'; window.scrollTo(0, 0); return true; }
+  if (a === 'evvolver' || a === 'navev'){ S.evSel = null; if (location.hash === '#eventos') render(); return true; }
+  if (a === 'evmes'){ S.evMes = t.dataset.mk || null; render(); return true; }
+  if (a === 'evadd' && e){ if (e.tipo === 'viaje') nuevoGastoViaje(e, estadoEv(e) === 'proximo' ? 'pre' : 'viaje'); else abrirEvGasto(e); return true; }
+  if (a === 'evaddfase' && e){ nuevoGastoViaje(e, t.dataset.fase); return true; }
+  if (a === 'evgasto'){ const m = S.movs.find(x => x.id === t.dataset.id); if (m) abrirEvGasto(EV(m.evento), m); return true; }
+  if (a === 'evedit' && e){ abrirEvento(e.tipo, false, e); return true; }
+  if (a === 'evmon' && E){ leerEv(); const ev = EV(E.ev), ms = E.pagador === 'yo' ? monedasDe(E.medio.slice(0, 1) === 't' ? 't' : 'c', E.medio.slice(2)) : [...new Set([ev.moneda, monP().id])]; E.moneda = ms[(ms.indexOf(E.moneda) + 1) % ms.length]; abrirEvGasto(ev, null, true); return true; }
+  if (a === 'evgdel' && E){ if (!armar(t)) return true; if (await borrar(COL.movs, E.id)){ cerrar(); toast('Gasto borrado'); } return true; }
+  if (a === 'vinv' && V){ leerV(); const n = V.invTxt.trim(); if (!n){ toast('Escribí un nombre'); $('#v-inv')?.focus(); return true; } V.invitados.push({id:genId('g'), nombre:n, invitado:true}); V.invTxt = ''; abrirEvento(null, true); $('#v-inv')?.focus(); return true; }
+  if (a === 'evliq' && e){
+    const de = t.dataset.de, para = t.dataset.a, monto = +t.dataset.v;
+    if (de === 'yo' || para === 'yo'){ abrirLiq(e, de, para, monto); return true; }
+    if (!armar(t)) return true;
+    if (await guardarLiq(e, de, para, monto, null)) toast(`${nomP(e, de)} → ${nomP(e, para)}: saldado`); return true;
+  }
+  if (a === 'evliqok' && LQ){ const ev = EV(LQ.ev); if (ev && await guardarLiq(ev, LQ.de, LQ.a, LQ.monto, LQ.cuenta)){ cerrar(); toast('Pago registrado'); } return true; }
+  if (a === 'evcerrar' && e){ try { await S.db.collection('eventos').doc(e.id).update({cerrado:true, cerradoEl:hoy()}); toast('Archivado: lo ves en Viajes, filtrando por su mes'); } catch(err){ toast('No se pudo archivar'); } return true; }
+  if (a === 'evreabrir' && e){ try { await S.db.collection('eventos').doc(e.id).update({cerrado:false}); toast('Reabierto'); } catch(err){ toast('No se pudo reabrir'); } return true; }
+  if (a === 'evdel' && e){ if (!armar(t)) return true; await borrarEvento(e); S.evSel = null; render(); toast('Borrado'); return true; }
+  if (a === 'evcopy'){ const ta = $('#wa-txt'); if (!ta) return true;
+    try { await navigator.clipboard.writeText(ta.value); toast('Resumen copiado: pegalo en WhatsApp'); } catch(err){ ta.focus(); ta.select(); toast('Texto seleccionado: copialo'); } return true; }
+  if (a === 'evpartadd' && e){ const x = PER(t.dataset.c); if (x) try { await S.db.collection('eventos').doc(e.id).update({participantes:(e.participantes || []).concat([{id:x.id, nombre:x.nombre}])}); } catch(err){ toast('No se pudo guardar'); } return true; }
+  if (a === 'evpartdel' && e){ const pid = t.dataset.pid;
+    if (gastosEv(e.id).some(m => m.pagador === pid || (m.division || []).includes(pid))){ toast('Tiene gastos en esta salida: sacalo de esos gastos primero'); return true; }
+    try { await S.db.collection('eventos').doc(e.id).update({participantes:(e.participantes || []).filter(p => p.id !== pid)}); } catch(err){ toast('No se pudo guardar'); } return true; }
+  if (a === 'evinv' && e){ const inp = $('#ev-inv'), n = (inp?.value || '').trim(); if (!n){ toast('Escribí un nombre'); inp?.focus(); return true; }
+    try { await S.db.collection('eventos').doc(e.id).update({participantes:(e.participantes || []).concat([{id:genId('g'), nombre:n, invitado:true}])}); toast(`${n} sumado como invitado temporal`); } catch(err){ toast('No se pudo guardar'); } return true; }
+  return false;
+}
+
+
 // ---------- Eventos ----------
 const armar = t => { if (t.dataset.armed) return true; t.dataset.armed = '1'; t.textContent = '¿Borrar? Tocá de nuevo'; return false; };
 document.addEventListener('click', async ev => {
-  const t = ev.target.closest('[data-act],[data-f],[data-p],[data-m],[data-k],[data-t],[data-g],[data-h]');
+  const t = ev.target.closest('[data-act],[data-f],[data-p],[data-m],[data-k],[data-t],[data-g],[data-h],[data-e],[data-w],[data-lq]');
   if (!t) return;
   if (t.classList.contains('scrim') && ev.target !== t) return;
+  if (t.dataset.e && E){
+    leerEv(); const k = t.dataset.e, v = t.dataset.v;
+    if (k === 'div') E.division = E.division.includes(v) ? E.division.filter(x => x !== v) : E.division.concat([v]); else E[k] = v;
+    abrirEvGasto(EV(E.ev), null, true); return;
+  }
+  if (t.dataset.w && V){ leerV(); const k = t.dataset.w, v = t.dataset.v;
+    if (k === 'part') V.parts = V.parts.includes(v) ? V.parts.filter(x => x !== v) : V.parts.concat([v]);
+    else if (k === 'invdel') V.invitados = V.invitados.filter(g => g.id !== v);
+    else V[k] = v;
+    abrirEvento(null, true); return; }
+  if (t.dataset.lq && LQ){ LQ.cuenta = t.dataset.v; abrirLiq(EV(LQ.ev), null, null, null, true); return; }
   if (t.dataset.f && F){
     leerForm();
     const k = t.dataset.f, v = t.dataset.v;
@@ -2325,6 +2770,7 @@ document.addEventListener('click', async ev => {
     }
     else if (k === 'medio'){ const [tp, id] = [v.slice(0,1), v.slice(2)]; if (tp === 't'){ F.tarjeta = id; } else { F.tarjeta = null; F.cuenta = id; F.cuotas = 1; } F.resManual = false; arreglarMoneda(); }
     else if (k === 'cuenta'){ F.cuenta = v; arreglarMoneda(); }
+    else if (k === 'evento'){ F.evento = v || null; F.fase = null; }
     else if (k === 'tarjeta'){ F.tarjeta = v; const cp = TJ(v)?.cuentaPago; if (cp && CTA(cp)) F.cuenta = cp; arreglarMoneda(); }
     else if (k === 'split'){
       if (!F.split) F.split = {con:[], pagador:'yo', partes:{}, modo: F.splitModo || 'div'};
@@ -2367,6 +2813,7 @@ document.addEventListener('click', async ev => {
   if (t.dataset.k && A){ leerCuenta(); const k = t.dataset.k, v = t.dataset.v; if (k === 'mon'){ A.monedas = A.monedas.includes(v) ? A.monedas.filter(x => x !== v) : A.monedas.concat([v]); } else A[k] = v; abrirCuenta(null, true); return; }
   if (t.dataset.t && T){ leerTarjeta(); const k = t.dataset.t, v = t.dataset.v; if (k === 'mon'){ T.monedas = T.monedas.includes(v) ? T.monedas.filter(x => x !== v) : T.monedas.concat([v]); } else T[k] = v; abrirTarjeta(null, true); return; }
   const a = t.dataset.act;
+  if (a && a.startsWith('ev') || a === 'vinv' || a === 'navev'){ if (await accionEventos(a, t)) return; }
   if (a === 'catnew'){ abrirCat(null); return; }
   if (a === 'subnew'){ abrirSub(null); return; }
   if (a === 'subedit'){ const x = SUB(t.dataset.id); if (x) abrirSub(x); return; }
@@ -2385,6 +2832,7 @@ document.addEventListener('click', async ev => {
     const ult = S.plant.find(p => recPer(p) && p.persona === pid && p.tipo === 'gasto') || S.movs.filter(m => pagoOtro(m) && m.split.pagador === pid).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0];
     nuevoForm(rec ? {tipo:'ingreso', concepto:'Pago de ' + nomPer(pid), monto:v, saldo:pid} : {tipo:'gasto', concepto:'Pago a ' + nomPer(pid), monto:v, saldo:pid, ...(ult && CAT(ult.cat) ? {cat:ult.cat} : {})}); return; }
   if (a === 'acento'){ lsSet('misgastos.acento', t.dataset.v); aplicarAcento(t.dataset.v); render(); return; }
+  if (a === 'acento2'){ lsSet('misgastos.acento2', t.dataset.v); aplicarAcento2(t.dataset.v); render(); return; }
   if (a === 'tema'){ lsSet('misgastos.tema', t.dataset.v); aplicarTema(t.dataset.v); render(); return; }
   if (a === 'mes-hoy'){ S.mes = hoyMes(); render(); window.scrollTo(0, 0); return; }
   if (a === 'mes'){ const n = addMes(S.mes, +t.dataset.d); if (n < primerMesNav()){ toast('No hay datos antes de ' + nombreMes(primerMesNav()).toLowerCase()); return; } S.mes = n; render(); return; }
@@ -2493,6 +2941,7 @@ document.addEventListener('submit', ev => {
   const id = ev.target.id;
   if (id === 'sheet') enviarForm(); else if (id === 'psheet') enviarPlant(); else if (id === 'msheet') enviarMover();
   else if (id === 'ksheet') enviarCuenta(); else if (id === 'esheet') enviarPersona(); else if (id === 'tsheet') enviarTarjeta(); else if (id === 'osheet') enviarMoneda(); else if (id === 'catsheet') enviarCat(); else if (id === 'subsheet') enviarSub();
+  else if (id === 'gsheet') enviarEvGasto(); else if (id === 'vsheet') enviarEvento();
 });
 document.addEventListener('change', ev => {
   if (ev.target.id === 'f-compensa' && F){ leerForm(); abrirHoja(true); return; }
@@ -2504,6 +2953,7 @@ document.addEventListener('change', ev => {
   } if (ev.target.id === 'imp-file' && ev.target.files && ev.target.files[0]) leerCopia(ev.target.files[0]); });
 document.addEventListener('input', ev => {
   if (ev.target.id === 'f-monto') actualizarConv();
+  if (ev.target.id === 'e-monto' && E) updEv();
   if (F && F.split && (ev.target.id === 'f-pt-rng' || ev.target.dataset.parte)){
     const ins = [...document.querySelectorAll('[data-parte]')];
     if (ev.target.id === 'f-pt-rng'){ const v = +ev.target.value; ins.forEach(i => i.value = dec(i.dataset.parte === 'yo' ? v : 100 - v)); }
@@ -2560,6 +3010,5 @@ boot();
 })();
 </script>
 
-</body></html>
 
 </body></html>
