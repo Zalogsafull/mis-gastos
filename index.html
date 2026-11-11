@@ -333,9 +333,11 @@ a.btn{text-decoration:none;display:inline-block}
 .ptc button{border:0;background:transparent;color:var(--muted);width:24px;height:24px;border-radius:50%}
 .ptc button:hover{background:var(--raise)}
 .tr{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 12px;border-radius:10px;background:var(--raise);flex-wrap:wrap}
-/* Recuadro principal en los temas oscuros: gris suave en lugar de casi blanco */
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .hero{background:color-mix(in srgb,var(--ink) 70%,var(--bg))}}
-:root[data-theme="dark"] .hero,:root[data-theme="oscuro-marcado"] .hero{background:color-mix(in srgb,var(--ink) 70%,var(--bg))}
+/* Recuadro principal en los temas oscuros: gris oscuro con letras claras (dentro del recuadro, --bg es el color del texto) */
+/* Tema claro, a la inversa: gris un paso más oscuro que la página, con letras oscuras */
+.hero{--bg:#14202c;--hero-ok:#5b8a6f;--hero-mal:#a8695d;background:#c9cfd6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .hero{--bg:#eef3f7;background:#2c3846}}
+:root[data-theme="dark"] .hero,:root[data-theme="oscuro-marcado"] .hero{--bg:#eef3f7;background:#2c3846}
 /* Tarjeta del viaje en gris suave (el color del viaje queda en el borde, la barra y los botones) */
 .panel.trip{background:color-mix(in srgb,var(--ink) 5%,var(--surface));border-color:color-mix(in srgb,var(--viaje) 45%,var(--line))}
 .wbar{background:color-mix(in srgb,var(--ink) 13%,var(--surface))}
