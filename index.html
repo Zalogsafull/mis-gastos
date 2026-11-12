@@ -1100,6 +1100,7 @@ async function sincronizar(manual){
     const cambiosDeDrive = canon(fus) !== canon(local);
     if (cambiosDeDrive) await S.db.cargarCrudo(fus);
     if (!id || canon(fus) !== canon(rem)){ const {[META]: meta, ...datos} = fus; await subirArchivo(id, {app:'mis-gastos', formato:2, actualizado:new Date().toISOString(), datos, meta}); }
+    try { await sincronizarCompartidos(manual); } catch(e){}
     D.pendiente = false; D.necesitaToque = false; lsSet(LSD.ultima, String(Date.now()));
     if (manual) toast(cambiosDeDrive ? 'Sincronizado: trajo cambios de Drive' : 'Sincronizado con Drive');
   } catch(e){
@@ -1128,6 +1129,227 @@ function desconectarDrive(){
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && driveConectado() && tokenValido()) sincronizar(false); });
 window.addEventListener('online', () => { if (driveConectado() && D.pendiente) sincronizar(false); });
+// ---------- Gastos compartidos entre dos personas (un archivo en Drive que usan las dos apps) ----------
+// Quien invita crea el archivo en su Drive y se lo comparte por correo. La otra persona abre el enlace, lo elige una vez
+// en el selector de Google (así su app puede leerlo) y queda vinculada. Desde ahí se sincroniza junto con Drive.
+// En el archivo cada gasto se guarda "neutro": quién pagó y la parte de cada uno se anotan con la letra de cada persona (A o B),
+// así cada app lo muestra desde su lado (si yo pagué, para la otra persona "pagó Gonza").
+const PICKER = {clave:'AIzaSyDmbVg5wQ1Oh6h5MwaYwHPR43QANjiF4Pk', app:'499878544628'};
+const LS_UNIRSE = 'misgastos.unirse';
+const SH = {app:'mis-gastos-compartido'};
+const otraLetra = k => k === 'A' ? 'B' : 'A';
+const enlaceUnirse = f => `${location.origin}${location.pathname}#unirse=${f}`;
+const linkDe = pid => (PER(pid) || {}).link || null;
+const personasVinculadas = () => PERS().filter(x => x.link && x.link.f);
+const miEmail = () => lsGet(LSD.email) || '';
+// ¿Este movimiento va al archivo compartido con esa persona? Gastos divididos solo con ella y pagos entre ustedes.
+const vaAlCompartido = (m, pid) => m.estado !== 'omitido' && !m.plantilla && !m.evento && (m.saldo === pid || (m.tipo === 'gasto' && m.split && (m.split.con || []).length === 1 && m.split.con[0] === pid));
+// Movimiento de la app → registro neutro del archivo
+function aNeutro(m, pid, L){
+  const K = L.yo, O = otraLetra(K);
+  // Las notas quedan en cada app. En los pagos, el texto lo pone cada app desde su lado ("Lu me pagó" / "Le pagué a Gonza").
+  const base = {fecha:m.fecha, concepto:m.concepto || '', monto:+m.monto || 0, moneda: m.shMon || m.moneda, tasa:m.tasa || tasaDe(m.moneda)};
+  if (m.saldo === pid) return {...base, concepto:'', tipo:'pago', de: m.tipo === 'ingreso' ? O : K, a: m.tipo === 'ingreso' ? K : O};
+  const sp = m.split, pa = sp.partes || {};
+  return {...base, tipo:'gasto', cat: m.shCat || m.cat, cuotas: Math.max(1, m.cuotas|0 || 1), mes: mesPer(m), pagador: sp.pagador === pid ? O : K, partes: {[K]: +pa.yo || 0, [O]: +pa[pid] || 0}};
+}
+// Registro neutro → movimiento de la app (para lo que cargó la otra persona)
+function deNeutro(d, pid, L, previo){
+  const K = L.yo, nom = nomPer(pid), prev = previo || {};
+  const monOk = S.cfg.monedas.some(x => x.id === d.moneda);
+  const base = {fecha:d.fecha, concepto:d.concepto, monto:+d.monto || 0, moneda: monOk ? d.moneda : monP().id, tasa:d.tasa || 1, nota: previo ? (prev.nota || '') : `Lo cargó ${nom}`, cuotas:1, creado: prev.creado || Date.now()};
+  if (!monOk) base.shMon = d.moneda; // moneda que no tenés: se muestra en la principal y se devuelve tal cual
+  if (d.tipo === 'pago'){
+    const recibo = d.a === K; // ella me pagó → ingreso mío; yo le pagué → gasto mío
+    return {...base, tipo: recibo ? 'ingreso' : 'gasto', cat: recibo ? 'Ingreso' : (prev.cat || catDefecto()), saldo:pid, cuenta: prev.cuenta || cuentaDefecto(), tarjeta:null,
+      concepto: recibo ? `${nom} me pagó` : `Le pagué a ${nom}`, estado: prev.estado === 'pagado' ? 'pagado' : 'pend'};
+  }
+  const yoPague = d.pagador === K, partes = {yo: +(d.partes || {})[K] || 0, [pid]: +(d.partes || {})[otraLetra(K)] || 0};
+  const modo = !yoPague && partes.yo >= 99.99 ? 'pedido' : yoPague && partes[pid] >= 99.99 ? 'prestado' : null;
+  const m = {...base, tipo:'gasto', cat: CAT(d.cat) ? d.cat : (prev.cat || catDefecto()), shCat: CAT(d.cat) ? undefined : d.cat, cuotas: Math.max(1, d.cuotas|0 || 1), split:{con:[pid], pagador: yoPague ? 'yo' : pid, partes}};
+  if (modo) m.split.modo = modo;
+  if (yoPague){ m.cuenta = prev.cuenta || cuentaDefecto(); m.tarjeta = prev.tarjeta || null; m.estado = prev.estado === 'pagado' ? 'pagado' : 'pend'; } // dice que lo pagaste vos: queda pendiente hasta que confirmes con qué
+  else { m.cuenta = null; m.tarjeta = null; m.estado = 'pagado'; if (d.mes) m.inicioCuotas = d.mes; }
+  return m;
+}
+// Picker de Google: la otra persona elige el archivo una vez y desde ahí su app lo puede leer
+function cargarPicker(){
+  return new Promise((ok, mal) => {
+    const listo = () => window.gapi.load('picker', {callback: ok, onerror: mal});
+    if (window.gapi && window.gapi.load) return listo();
+    const s = document.createElement('script'); s.src = 'https://apis.google.com/js/api.js'; s.async = true; s.onload = listo; s.onerror = () => mal({code:'sin_google'}); document.head.appendChild(s);
+  });
+}
+async function elegirArchivo(fileId){
+  await cargarPicker();
+  return new Promise(ok => {
+    const P = google.picker, vista = new P.DocsView(P.ViewId.DOCS).setMode(P.DocsViewMode.LIST);
+    if (vista.setFileIds && fileId) vista.setFileIds(fileId); else vista.setQuery('mis-gastos-compartido');
+    new P.PickerBuilder().addView(vista).setOAuthToken(D.token).setDeveloperKey(PICKER.clave).setAppId(PICKER.app).setLocale('es')
+      .setTitle('Elegí el archivo de gastos compartidos')
+      .setCallback(r => { if (r.action === P.Action.PICKED) ok(r.docs && r.docs[0] ? r.docs[0].id : null); else if (r.action === P.Action.CANCEL) ok(null); })
+      .build().setVisible(true);
+  });
+}
+async function asegurarToken(){ if (tokenValido()) return true; try { await pedirToken(''); return true; } catch(e){ toast('No se pudo dar permiso a Google Drive'); return false; } }
+// ----- Invitar -----
+async function invitarPersona(pid, btn){
+  const x = PER(pid); if (!x) return;
+  const email = ($('#e-email')?.value || x.email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast('Poné un correo válido'); return; }
+  if (!driveConectado()){ toast('Primero conectá Google Drive en Ajustes → Tus datos'); return; }
+  if (!(await asegurarToken())) return;
+  if (btn){ btn.disabled = true; btn.textContent = 'Invitando…'; }
+  try {
+    const yo = miEmail(), L = {f:null, yo:'A'};
+    const docs = {}, meta = {}, t = Date.now();
+    for (const m of S.movs) if (vaAlCompartido(m, pid)){ docs[m.id] = {...aNeutro(m, pid, L), autor:'A'}; meta[m.id] = {t}; }
+    const contenido = {app:SH.app, v:1, miembros:{A:{email:yo, nombre: miNombre()}, B:{email, nombre: x.nombre}}, docs, meta, actualizado:new Date().toISOString()};
+    const b = 'mg' + Math.random().toString(36).slice(2), nombreArch = `mis-gastos-compartido-${miNombre()}-${x.nombre}.json`.replace(/[^\w.\-áéíóúñÁÉÍÓÚÑ]/g, '_');
+    const body = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name:nombreArch, mimeType:'application/json', description:'Gastos compartidos de la app Mis gastos. No lo edites a mano.'})}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(contenido)}\r\n--${b}--`;
+    const j = await (await gapi('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {method:'POST', headers:{'Content-Type':'multipart/related; boundary=' + b}, body})).json();
+    const msg = `Te invito a compartir nuestros gastos en Mis gastos. Abrí este enlace desde tu teléfono o computadora y tocá Aceptar: ${enlaceUnirse(j.id)}`;
+    await gapi(`https://www.googleapis.com/drive/v3/files/${j.id}/permissions?sendNotificationEmail=true&emailMessage=${encodeURIComponent(msg)}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({role:'writer', type:'user', emailAddress:email})});
+    const personas = PERS().map(y => y.id === pid ? {...y, email, link:{f:j.id, yo:'A', desde:hoy()}} : y);
+    await guardarCfg({personas});
+    abrirEnlaceInvitacion(pid);
+  } catch(e){
+    if (btn){ btn.disabled = false; btn.textContent = 'Invitar'; }
+    toast(e && e.code === 'token' ? 'Tocá de nuevo para renovar el permiso de Drive' : e && e.status === 400 ? 'Google no aceptó ese correo. Revisalo.' : 'No se pudo crear la invitación');
+  }
+}
+function abrirEnlaceInvitacion(pid){
+  const x = PER(pid), L = x && x.link; if (!L) return;
+  const url = enlaceUnirse(L.f), txt = `Te invité a compartir nuestros gastos en Mis gastos. Abrí este enlace y tocá Aceptar: ${url}`, tel = (x.tel || '').replace(/\D/g, '');
+  S.textoCompartir = txt;
+  $('#overlay').innerHTML = `<div class="scrim" data-act="close"><div class="sheet anim" id="isheet" role="dialog" aria-modal="true" aria-label="Invitación">
+    <header><h3>Invitación para ${esc(x.nombre)}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
+    <p class="note" style="margin:0">Google ya le mandó un correo a <strong>${esc(x.email || '')}</strong>. También podés mandarle el enlace por WhatsApp. Cuando lo abra y toque Aceptar, quedan vinculados y los gastos con ${esc(x.nombre)} se sincronizan solos, junto con Drive.</p>
+    <pre class="wa-prev">${esc(url)}</pre>
+    <div class="actions" style="flex-wrap:wrap"><button type="button" class="btn" data-act="cmpcopiar">Copiar enlace</button>
+      <a class="btn primary" style="text-align:center;text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${tel}?text=${encodeURIComponent(txt)}">Enviar por WhatsApp</a></div>
+    <p class="note" style="margin:0">${esc(x.nombre)} tiene que usar esta misma app (la dirección de GitHub) con su Google Drive conectado.</p>
+  </div></div>`;
+}
+// ----- Aceptar una invitación -----
+let UN = null;
+function abrirUnirse(){
+  const f = lsGet(LS_UNIRSE); if (!f) return;
+  UN = UN && UN.f === f ? UN : {f, paso:'inicio'};
+  const pie = `<button type="button" class="btn ghost" data-act="unircancelar">Ahora no</button>`;
+  let cuerpo = '';
+  if (UN.paso === 'inicio'){
+    cuerpo = !driveConectado() ? `<p style="margin:0">Te invitaron a compartir gastos. Para aceptar, primero conectá tu Google Drive: ahí se guarda el archivo que comparten.</p>
+      <div class="actions">${pie}<button type="button" class="btn primary" data-act="unirdrive">Conectar Google Drive</button></div>`
+      : `<p style="margin:0">Te invitaron a compartir gastos. Al tocar <strong>Aceptar</strong>, Google te muestra el archivo compartido: elegilo y tocá <em>Seleccionar</em>. Es una sola vez.</p>
+      <div class="actions">${pie}<button type="button" class="btn primary" data-act="unirelegir">Aceptar</button></div>`;
+  } else if (UN.paso === 'persona'){
+    const otro = UN.archivo.miembros[otraLetra(UN.yo)] || {}, sug = PERS().find(p => p.nombre.trim().toLowerCase() === String(otro.nombre || '').trim().toLowerCase());
+    if (UN.pid === undefined) UN.pid = sug ? sug.id : '';
+    cuerpo = `<p style="margin:0">Invitación de <strong>${esc(otro.nombre || otro.email || 'otra persona')}</strong>${otro.email ? ` (${esc(otro.email)})` : ''}. ¿Quién es en tu app?</p>
+      <div class="field"><span class="label">En tus Personas</span>${chipsDe('u', 'pid', [['', `Nueva: ${otro.nombre || 'Persona'}`]].concat(PERS().filter(p => !p.link).map(p => [p.id, p.nombre])), UN.pid)}</div>
+      <div class="field"><label for="u-yo">Tu nombre (cómo te ve)</label><input class="inp" id="u-yo" value="${esc(S.cfg.miNombre || (UN.archivo.miembros[UN.yo] || {}).nombre || '')}" autocomplete="off"></div>
+      <div class="actions">${pie}<button type="button" class="btn primary" data-act="unirpersona">Seguir</button></div>`;
+  } else if (UN.paso === 'duplicados'){
+    cuerpo = `<p style="margin:0">Estos gastos parecen estar cargados en las dos apps. Marcá los que son el mismo: quedan unificados (uno solo).</p>
+      <div class="list">${UN.pares.map((p, i) => `<label class="check"><input type="checkbox" data-dup="${i}" ${p.ok ? 'checked' : ''}> <span><strong>${esc(p.d.concepto || 'Gasto')}</strong> · ${dia(p.d.fecha)} · ${fmtEn(p.d.monto, p.d.moneda)}<br><small class="note">En tu app: ${esc(p.m.concepto || '')} · ${dia(p.m.fecha)} · ${fmtM(p.m)}</small></span></label>`).join('')}</div>
+      <div class="actions"><span></span><button type="button" class="btn primary" data-act="unirfin">Listo</button></div>`;
+  }
+  $('#overlay').innerHTML = `<div class="scrim"><div class="sheet anim" id="usheet" role="dialog" aria-modal="true" aria-label="Compartir gastos">
+    <header><h3>Compartir gastos</h3></header>${cuerpo}</div></div>`;
+}
+async function unirElegir(btn){
+  if (!(await asegurarToken())) return;
+  if (btn){ btn.disabled = true; btn.textContent = 'Abriendo…'; }
+  let id = null;
+  try { id = await elegirArchivo(UN.f); } catch(e){ toast('No se pudo abrir el selector de Google'); }
+  if (btn){ btn.disabled = false; btn.textContent = 'Aceptar'; }
+  if (!id) return;
+  if (id !== UN.f){ toast('Ese no es el archivo de la invitación. Elegí el que dice mis-gastos-compartido.'); return; }
+  let a = null; try { a = await bajarArchivo(id); } catch(e){}
+  if (!a || a.app !== SH.app){ toast(a ? 'Ese archivo no es de gastos compartidos' : 'Todavía no llegó la invitación. Probá en un minuto.'); return; }
+  const yo = miEmail().toLowerCase(), M = a.miembros || {};
+  UN.yo = (M.A && M.A.email && M.A.email.toLowerCase() === yo) ? 'A' : 'B';
+  UN.archivo = a; UN.paso = 'persona'; abrirUnirse();
+}
+async function unirPersona(){
+  const a = UN.archivo, otro = a.miembros[otraLetra(UN.yo)] || {}, minombre = ($('#u-yo')?.value || '').trim();
+  let pid = UN.pid, personas = PERS();
+  if (!pid){ pid = genId('p'); personas = personas.concat([{id:pid, nombre: otro.nombre || 'Persona', email: otro.email || ''}]); }
+  personas = personas.map(y => y.id === pid ? {...y, email: y.email || otro.email || '', link:{f:UN.f, yo:UN.yo, desde:hoy(), alias:{}}} : y);
+  const patch = {personas}; if (minombre) patch.miNombre = minombre;
+  if (!(await guardarCfg(patch))) return;
+  UN.pid = pid;
+  // Parejas posibles: lo que cargó la otra persona contra lo que ya tenés con ella (misma fecha ±2 días y mismo monto)
+  const L = linkDe(pid), usados = new Set(), pares = [];
+  for (const [id, d] of Object.entries(a.docs || {})){
+    if (d.autor === UN.yo || (a.meta || {})[id]?.del) continue;
+    const m = S.movs.find(m => !usados.has(m.id) && vaAlCompartido(m, pid) && !m.sh && Math.abs(toBase(m) - (+d.monto || 0) * (d.tasa || 1)) < 1 && Math.abs((new Date(m.fecha) - new Date(d.fecha)) / 864e5) <= 2 && (d.tipo === 'pago') === !!m.saldo);
+    if (m){ usados.add(m.id); pares.push({id, d, m, ok:true}); }
+  }
+  UN.pares = pares;
+  if (pares.length){ UN.paso = 'duplicados'; abrirUnirse(); } else await unirFin();
+}
+async function unirFin(){
+  const x = PER(UN.pid); if (!x) return;
+  const alias = {...((x.link || {}).alias || {})};
+  for (const p of UN.pares || []){ const cb = $(`[data-dup="${UN.pares.indexOf(p)}"]`); if (cb ? cb.checked : p.ok) alias[p.m.id] = p.id; }
+  await guardarCfg({personas: PERS().map(y => y.id === x.id ? {...y, link:{...y.link, alias}} : y)});
+  lsDel(LS_UNIRSE); UN = null; cerrar();
+  toast(`Vinculado con ${x.nombre}. Sincronizando…`);
+  await sincronizarCompartidos(true);
+}
+// ----- Sincronizar cada archivo compartido (lo llama sincronizar(), después del archivo propio) -----
+let SHB = false;
+async function sincronizarCompartidos(manual){
+  if (SHB || !driveConectado() || !S.db || !S.db.local || !tokenValido()) return;
+  SHB = true;
+  try { for (const x of personasVinculadas()) await sincronizarCon(x); }
+  catch(e){ if (manual) toast('No se pudieron sincronizar los gastos compartidos'); }
+  finally { SHB = false; }
+}
+async function sincronizarCon(x){
+  const L = x.link, pid = x.id, K = L.yo;
+  let a; try { a = await bajarArchivo(L.f); } catch(e){ if (e && e.status === 404){ toast(`El archivo compartido con ${x.nombre} ya no está disponible`); } throw e; }
+  if (!a || a.app !== SH.app) return;
+  a.docs = a.docs || {}; a.meta = a.meta || {};
+  const crudo = S.db.crudo(), lm = (crudo[META] || {})[COL.movs] || {}, alias = L.alias || {};
+  const docDe = m => alias[m.id] || (m.sh && m.sh.f === L.f ? m.sh.id : m.id);
+  let subir = false; const escribir = [], borrarL = [];
+  // 1) Lo mío → archivo (si cambió después que lo del archivo)
+  const vistos = new Set();
+  for (const m of S.movs){
+    const did = docDe(m); if (!(vaAlCompartido(m, pid) || (m.sh && m.sh.f === L.f))) continue;
+    vistos.add(did);
+    const tl = (lm[m.id] || {}).t || 0, td = (a.meta[did] || {}).t || 0;
+    if (!vaAlCompartido(m, pid)){ // dejó de ser compartido con esta persona: se borra del archivo
+      if (a.docs[did] && tl > td){ delete a.docs[did]; a.meta[did] = {t: tl, del:true}; subir = true; } continue; }
+    const n = {...aNeutro(m, pid, L), autor: (a.docs[did] || {}).autor || K};
+    if (!a.docs[did] && !(a.meta[did] || {}).del){ a.docs[did] = n; a.meta[did] = {t: tl || Date.now()}; subir = true; }
+    else if (a.docs[did] && tl > td && canon(n) !== canon(a.docs[did])){ a.docs[did] = n; a.meta[did] = {t: tl}; subir = true; }
+  }
+  // Borrados en mi app de cosas que estaban en el archivo
+  for (const [lid, mt] of Object.entries(lm)) if (mt.del){
+    const did = alias[lid] || (lid.startsWith('sh_') ? lid.slice(3) : lid);
+    if (a.docs[did] && !vistos.has(did) && mt.t > ((a.meta[did] || {}).t || 0)){ delete a.docs[did]; a.meta[did] = {t: mt.t, del:true}; subir = true; }
+  }
+  // 2) Archivo → mi app (lo que cargó o cambió la otra persona)
+  const porDoc = {}; for (const m of S.movs) porDoc[docDe(m)] = m;
+  for (const [did, d] of Object.entries(a.docs)){
+    const m = porDoc[did], td = (a.meta[did] || {}).t || 0;
+    if (!m){ if (d.autor !== K) escribir.push(['sh_' + did, {...deNeutro(d, pid, L), sh:{f:L.f, id:did}}]); continue; }
+    const tl = (lm[m.id] || {}).t || 0;
+    if (td > tl && canon(aNeutro(m, pid, L)) !== canon({...d, autor:undefined})) { const {id, ...prev} = m; escribir.push([m.id, {...prev, ...deNeutro(d, pid, L, prev), sh: m.sh}]); }
+  }
+  for (const [did, mt] of Object.entries(a.meta)) if (mt.del){ const m = porDoc[did]; if (m && mt.t > ((lm[m.id] || {}).t || 0)) borrarL.push(m.id); }
+  for (const [id, d] of escribir){ const limpio = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined)); await S.db.collection(COL.movs).doc(id).set(limpio); }
+  for (const id of borrarL) await S.db.collection(COL.movs).doc(id).delete();
+  // Mi nombre en el archivo
+  const yoN = S.cfg.miNombre; if (yoN && a.miembros && a.miembros[K] && a.miembros[K].nombre !== yoN){ a.miembros[K].nombre = yoN; subir = true; }
+  if (a.miembros && a.miembros[K] && miEmail() && a.miembros[K].email !== miEmail()){ a.miembros[K].email = miEmail(); subir = true; }
+  if (subir){ a.actualizado = new Date().toISOString(); await subirArchivo(L.f, a); }
+}
+
 // ---------- Ajustes en secciones plegables (cuáles quedan abiertas se recuerda en este dispositivo) ----------
 let ajAbiertos = new Set();
 try { ajAbiertos = new Set(JSON.parse(lsGet('misgastos.ajustesAbiertos') || '[]')); } catch(e){}
@@ -1168,6 +1390,7 @@ function aplicarTema(t){
 aplicarTema(temaActual());
 async function boot(){
   S.mes = hoyMes();
+  { const mh = location.hash.match(/unirse=([\w-]+)/); if (mh){ lsSet(LS_UNIRSE, mh[1]); try { history.replaceState(null, '', location.pathname + '#inicio'); } catch(e){ location.hash = '#inicio'; } } }
   route();
   const C = window.claude;
   let cdb = null;
@@ -1225,6 +1448,7 @@ function render(){
   if (S.view === 'ajustes') plegarAjustes();
   if (S.view === 'analisis') dibujarGraficas();
   mostrarElegidos($('#main'));
+  if (lsGet(LS_UNIRSE) && !S.unirseVisto && S.modo === 'local' && Object.values(S.ready).every(Boolean) && !$('#overlay').innerHTML){ S.unirseVisto = true; setTimeout(abrirUnirse, 300); }
 }
 function banner(){
   if (S.sinGuardar) return `<div class="panel status warn">Este navegador no deja guardar datos (¿modo privado o incógnito?). Lo que cargues se pierde al cerrar la página.</div>`;
@@ -1723,7 +1947,7 @@ function vAjustes(){
     <div class="filters" style="margin-top:10px"><div class="field" style="flex:1;min-width:0"><label for="s-fecha">Los saldos iniciales son al día</label><input class="inp" id="s-fecha" type="date" value="${esc(c.fechaSaldos || inicio()+'-01')}"></div><button class="btn primary" data-act="fechasaldos" style="align-self:flex-end">Guardar</button></div>
     <p class="note" style="margin:8px 0 0">Las del <strong>día a día</strong> (cuenta sueldo, efectivo…) son de donde salen tus gastos: con ellas se calcula lo que te queda a fin de mes. Las de <strong>ahorro</strong> forman tu capital. Cada cuenta puede tener varias monedas y su saldo inicial en cada una.</p></section>
   <section class="panel"><h2>Personas <span><button class="btn" data-act="pernew">Agregar</button></span></h2>
-    <div class="list">${PERS().length ? PERS().map(x => { const b = balanceMes(x.id); return `<div class="row click" data-act="peredit" data-id="${x.id}"><div class="t">${esc(x.nombre)}</div><div class="m">${Math.abs(b) < 1 ? 'están a mano' : b > 0 ? 'te debe' : 'le debés'}</div><div class="a num">${Math.abs(b) < 1 ? '' : fmt(Math.abs(b))}</div></div>`; }).join('') : '<p class="empty">Agregá a las personas con las que compartís gastos (tu pareja, amigos, compañeros de casa).</p>'}</div>
+    <div class="list">${PERS().length ? PERS().map(x => { const b = balanceMes(x.id); return `<div class="row click" data-act="peredit" data-id="${x.id}"><div class="t">${esc(x.nombre)}${x.link ? '<span class="pill est">compartido</span>' : ''}</div><div class="m">${Math.abs(b) < 1 ? 'están a mano' : b > 0 ? 'te debe' : 'le debés'}</div><div class="a num">${Math.abs(b) < 1 ? '' : fmt(Math.abs(b))}</div></div>`; }).join('') : '<p class="empty">Agregá a las personas con las que compartís gastos (tu pareja, amigos, compañeros de casa).</p>'}</div>
     <p class="note" style="margin:8px 0 0">Al cargar un gasto podés marcarlo como dividido, elegir quién pagó y qué parte paga cada uno. En Movimientos → Personas ves cuánto te deben o les debés.</p></section>
   <section class="panel"><h2>Tarjetas de crédito <span><button class="btn" data-act="tjnew">Agregar</button></span></h2>
     <div class="list">${c.tarjetas.length ? c.tarjetas.map(t => `<div class="row click" data-act="tjedit" data-id="${t.id}"><div class="t">${esc(t.nombre)}</div><div class="m">Cierra el ${t.cierre || '–'} · vence el ${t.vence || '–'} · ${(t.monedas||[]).map(mo => esc(MON(mo).simbolo)).join(' y ')}</div><div class="a"><span class="ir" aria-hidden="true">›</span></div></div>`).join('') : '<p class="empty">No tenés tarjetas cargadas. Si no usás tarjeta de crédito, dejalo así.</p>'}</div>
@@ -2305,6 +2529,9 @@ function abrirPersona(x){
   $('#overlay').innerHTML = `<div class="scrim" data-act="close"><form class="sheet anim" id="esheet" role="dialog" aria-modal="true" aria-label="Persona" novalidate>
     <header><h3>${PE.id ? 'Editar persona' : 'Nueva persona'}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
     <div class="field"><label for="e-nombre">Nombre</label><input class="inp" id="e-nombre" value="${esc(PE.nombre)}" placeholder="Lu, Juan, Casa…" autocomplete="off"></div>
+    <div class="field"><label for="e-email">Correo de Google (para compartir gastos)</label><input class="inp" id="e-email" type="email" inputmode="email" value="${esc(PE.email || '')}" placeholder="nombre@gmail.com" autocomplete="off"></div>
+    ${PE.id ? (PE.link ? `<div class="compartir"><strong>Gastos compartidos con ${esc(PE.nombre)} ✓</strong><span class="note">Los gastos divididos y los pagos entre ustedes se sincronizan solos, junto con Google Drive.</span><div class="chips"><button type="button" class="btn" data-act="perenlace">Ver enlace de invitación</button><button type="button" class="btn ghost" data-act="perdesvincular">Dejar de compartir</button></div></div>`
+      : `<div class="compartir"><span class="note">Si ${esc(PE.nombre || 'esta persona')} también usa la app, invitala: crean un archivo compartido en Drive y los gastos que tienen juntos aparecen en las dos apps, sin cargarlos dos veces.</span><div class="chips"><button type="button" class="btn primary" data-act="perinvitar">Invitar a compartir gastos</button></div>${driveConectado() ? '' : '<span class="note">Necesitás tener Google Drive conectado (Ajustes → Tus datos).</span>'}</div>`) : ''}
     <div class="field"><label for="e-tel">Teléfono para WhatsApp (opcional)</label><input class="inp" id="e-tel" type="tel" inputmode="tel" value="${esc(PE.tel || '')}" placeholder="Con código de país, ej. 598 99 123 456" autocomplete="off"></div>
     ${PE.id ? `<p class="note" style="margin:0">${(() => { const b = balanceMes(PE.id); return Math.abs(b) < 1 ? 'Este mes están a mano.' : b > 0 ? `Este mes te debe ${fmt(b)}.` : `Este mes le debés ${fmt(-b)}.`; })()}</p>` : ''}
     <div class="actions">${PE.id ? `<button type="button" class="btn danger" data-act="perdel">Borrar</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>
@@ -2314,7 +2541,8 @@ function abrirPersona(x){
 async function enviarPersona(){
   const nombre = ($('#e-nombre')?.value || '').trim(); if (!nombre){ toast('Poné un nombre'); return; }
   const tel = ($('#e-tel')?.value || '').replace(/[^\d+]/g, '');
-  const x = {id: PE.id || genId('p'), nombre}; if (tel) x.tel = tel;
+  const email = ($('#e-email')?.value || '').trim().toLowerCase();
+  const x = {...(PE.id ? (PER(PE.id) || {}) : {}), id: PE.id || genId('p'), nombre}; if (tel) x.tel = tel; else delete x.tel; if (email) x.email = email; else delete x.email;
   const personas = PE.id ? PERS().map(y => y.id === x.id ? x : y) : PERS().concat([x]);
   if (await guardarCfg({personas})){ cerrar(); render(); toast('Guardado'); }
 }
@@ -2749,7 +2977,7 @@ async function accionEventos(a, t){
 // ---------- Eventos ----------
 const armar = t => { if (t.dataset.armed) return true; t.dataset.armed = '1'; t.textContent = '¿Borrar? Tocá de nuevo'; return false; };
 document.addEventListener('click', async ev => {
-  const t = ev.target.closest('[data-act],[data-f],[data-p],[data-m],[data-k],[data-t],[data-g],[data-h],[data-e],[data-w],[data-lq]');
+  const t = ev.target.closest('[data-act],[data-f],[data-p],[data-m],[data-k],[data-t],[data-g],[data-h],[data-e],[data-w],[data-lq],[data-u]');
   if (!t) return;
   if (t.classList.contains('scrim') && ev.target !== t) return;
   if (t.dataset.e && E){
@@ -2831,6 +3059,15 @@ document.addEventListener('click', async ev => {
   if (a === 'catborrar'){ await borrarCat(); return; }
   if (a === 'close'){ if (ev.target === t || t.tagName === 'BUTTON') cerrar(); return; }
   if (a === 'pernew'){ abrirPersona(null); return; }
+  if (t.dataset.u && UN && !a){ UN[t.dataset.u] = t.dataset.v; abrirUnirse(); return; }
+  if (a === 'perinvitar'){ await invitarPersona(PE.id, t); return; }
+  if (a === 'perenlace'){ abrirEnlaceInvitacion(PE.id); return; }
+  if (a === 'perdesvincular'){ if (!armar(t)) return; if (await guardarCfg({personas: PERS().map(y => { if (y.id !== PE.id) return y; const {link, ...z} = y; return z; })})){ cerrar(); render(); toast('Dejaste de compartir. Lo ya cargado queda en tu app.'); } return; }
+  if (a === 'unirdrive'){ conectarDrive(); let n = 0; const iv = setInterval(() => { if (driveConectado() && tokenValido()){ clearInterval(iv); abrirUnirse(); } else if (++n > 90) clearInterval(iv); }, 1000); return; }
+  if (a === 'unirelegir'){ await unirElegir(t); return; }
+  if (a === 'unirpersona'){ await unirPersona(); return; }
+  if (a === 'unirfin'){ await unirFin(); return; }
+  if (a === 'unircancelar'){ UN = null; cerrar(); toast('Podés aceptar después abriendo de nuevo el enlace'); return; }
   if (a === 'peredit'){ const x = PER(t.dataset.id); if (x) abrirPersona(x); return; }
   if (a === 'perdel'){ if (usaPersona(PE.id)){ toast('Tiene gastos cargados. Podés cambiarle el nombre, pero no borrarla.'); return; } if (!armar(t)) return; if (await guardarCfg({personas: PERS().filter(y => y.id !== PE.id)})){ cerrar(); render(); toast('Borrada'); } return; }
   if (a === 'saldar'){ const pid = t.dataset.pId, rec = t.dataset.dir === 'recibi', v = +t.dataset.v || '';
