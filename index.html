@@ -1151,7 +1151,11 @@ const miEmail = () => lsGet(LSD.email) || '';
 // Recurrentes con esa persona (el apartamento que te paga, la vivienda que le pagás): se comparten la plantilla y lo que se marca cada mes
 const recCompartible = (p, pid) => !!p && (p.tipo === 'ingreso' || p.tipo === 'gasto') && p.persona === pid;
 const vaAlCompartido = (m, pid) => m.plantilla && m.cargo === pid ? recCompartible(S.plant.find(p => p.id === m.plantilla), pid)
-  : m.estado !== 'omitido' && !m.plantilla && !m.evento && (m.saldo === pid || (m.tipo === 'gasto' && m.split && (m.split.con || []).length === 1 && m.split.con[0] === pid));
+  : m.estado !== 'omitido' && !m.plantilla && (!m.evento || (evCompartible(EV(m.evento), pid) && !m.division && !m.ajeno && !m.liq)) && (m.saldo === pid || (m.tipo === 'gasto' && m.split && (m.split.con || []).length === 1 && m.split.con[0] === pid));
+// Viajes con esa persona: se comparten el viaje (nombre y fechas) y sus gastos divididos con ella. El presupuesto y el archivado son de cada uno.
+const evCompartible = (e, pid) => !!e && e.tipo === 'viaje' && (e.participantes || []).some(p => p.id === pid);
+const evDocId = (e, L) => e.sh && e.sh.f === L.f ? e.sh.id : e.id;
+const aEv = e => ({nombre:e.nombre, desde:e.desde, hasta:e.hasta || '', moneda:e.moneda});
 const recDocId = (p, L) => p.sh && p.sh.f === L.f ? p.sh.id : p.id;
 // Plantilla recurrente → registro neutro (quién le paga a quién, con las letras A y B)
 function aRec(p, L){
@@ -1179,7 +1183,10 @@ function aNeutro(m, pid, L){
   const base = {fecha:m.fecha, concepto:m.concepto || '', monto:+m.monto || 0, moneda: m.shMon || m.moneda, tasa:m.tasa || tasaDe(m.moneda)};
   if (m.saldo === pid) return {...base, concepto:'', tipo:'pago', de: m.tipo === 'ingreso' ? O : K, a: m.tipo === 'ingreso' ? K : O};
   const sp = m.split, pa = sp.partes || {};
-  return {...base, tipo:'gasto', cat: m.shCat || m.cat, cuotas: Math.max(1, m.cuotas|0 || 1), mes: mesPer(m), pagador: sp.pagador === pid ? O : K, partes: {[K]: +pa.yo || 0, [O]: +pa[pid] || 0}};
+  const g = {...base, tipo:'gasto', cat: m.shCat || m.cat, cuotas: Math.max(1, m.cuotas|0 || 1), mes: mesPer(m), pagador: sp.pagador === pid ? O : K, partes: {[K]: +pa.yo || 0, [O]: +pa[pid] || 0}};
+  const e = m.evento && EV(m.evento); if (e && evCompartible(e, pid)){ g.ev = evDocId(e, L); g.fase = m.fase || 'viaje'; }
+  else if (m.shEv){ g.ev = m.shEv; g.fase = m.shFase || 'viaje'; } // viaje que todavía no está en esta app: se devuelve tal cual
+  return g;
 }
 // Registro neutro → movimiento de la app (para lo que cargó la otra persona)
 function deNeutro(d, pid, L, previo){
@@ -1205,6 +1212,8 @@ function deNeutro(d, pid, L, previo){
   const modo = !yoPague && partes.yo >= 99.99 ? 'pedido' : yoPague && partes[pid] >= 99.99 ? 'prestado' : null;
   const m = {...base, tipo:'gasto', cat: CAT(d.cat) ? d.cat : (prev.cat || catDefecto()), shCat: CAT(d.cat) ? undefined : d.cat, cuotas: Math.max(1, d.cuotas|0 || 1), split:{con:[pid], pagador: yoPague ? 'yo' : pid, partes}};
   if (modo) m.split.modo = modo;
+  const ev = d.ev && (S.evs || []).find(e => evCompartible(e, pid) && evDocId(e, L) === d.ev);
+  m.evento = ev ? ev.id : null; m.fase = ev ? (d.fase || 'viaje') : null; m.shEv = !ev && d.ev ? d.ev : null; m.shFase = !ev && d.ev ? (d.fase || 'viaje') : null;
   if (yoPague){ m.cuenta = prev.cuenta || cuentaDefecto(); m.tarjeta = prev.tarjeta || null; m.estado = prev.estado === 'pagado' ? 'pagado' : 'pend'; } // dice que lo pagaste vos: queda pendiente hasta que confirmes con qué
   else { m.cuenta = null; m.tarjeta = null; m.estado = 'pagado'; if (d.mes) m.inicioCuotas = d.mes; }
   return m;
@@ -1355,6 +1364,43 @@ async function unirFin(){
   await sincronizarCompartidos(true);
 }
 // Recurrentes con la persona: misma lógica que los movimientos, en la parte "recs" del archivo
+// Viajes con la persona: misma lógica, en la parte "evs" del archivo (van antes que los gastos, que apuntan a ellos)
+async function sincronizarEvs(a, x){
+  const L = x.link, pid = x.id, K = L.yo, lm = (S.db.crudo()[META] || {}).eventos || {};
+  let subir = false; const escribir = [], borrarL = [], vistos = new Set(), evs = S.evs || [];
+  for (const e of evs){
+    const did = evDocId(e, L); if (!(evCompartible(e, pid) || (e.sh && e.sh.f === L.f))) continue;
+    vistos.add(did);
+    const tl = (lm[e.id] || {}).t || 0, td = (a.emeta[did] || {}).t || 0;
+    if (!evCompartible(e, pid)){ if (a.evs[did] && tl > td){ delete a.evs[did]; a.emeta[did] = {t: tl, del:true}; subir = true; } continue; }
+    const n = {...aEv(e), autor: (a.evs[did] || {}).autor || K};
+    if (!a.evs[did] && !(a.emeta[did] || {}).del){ a.evs[did] = n; a.emeta[did] = {t: tl || Date.now()}; subir = true; }
+    else if (a.evs[did] && tl > td && canon(aEv(e)) !== canon(aEv(a.evs[did]))){ a.evs[did] = n; a.emeta[did] = {t: tl}; subir = true; }
+  }
+  for (const [lid, mt] of Object.entries(lm)) if (mt.del){
+    const did = lid.startsWith('she_') ? lid.slice(4) : lid;
+    if (a.evs[did] && !vistos.has(did) && mt.t > ((a.emeta[did] || {}).t || 0)){ delete a.evs[did]; a.emeta[did] = {t: mt.t, del:true}; subir = true; }
+  }
+  const porDoc = {}; for (const e of evs) porDoc[evDocId(e, L)] = e;
+  for (const [did, d] of Object.entries(a.evs)){
+    const e = porDoc[did], td = (a.emeta[did] || {}).t || 0;
+    if (!e){
+      if (d.autor === K) continue;
+      // Si ya tenías ese mismo viaje con ella (mismas fechas), se vinculan en vez de duplicarse
+      const ya = evs.find(v => evCompartible(v, pid) && !v.sh && v.desde === d.desde && !a.evs[v.id]);
+      if (ya){ const {id, ...prev} = ya; escribir.push([ya.id, {...prev, sh:{f:L.f, id:did}}]); continue; }
+      escribir.push(['she_' + did, {tipo:'viaje', ...aEv(d), participantes:[{id:'yo', nombre:miNombre()}, {id:pid, nombre:nomPer(pid)}], liquidaciones:[], cerrado:false, presupuesto:0, creado:Date.now(), sh:{f:L.f, id:did}}]);
+      continue;
+    }
+    const tl = (lm[e.id] || {}).t || 0;
+    if (td > tl && canon(aEv(e)) !== canon(aEv(d))){ const {id, ...prev} = e; escribir.push([e.id, {...prev, ...aEv(d)}]); }
+  }
+  for (const [did, mt] of Object.entries(a.emeta)) if (mt.del){ const e = porDoc[did]; if (e && mt.t > ((lm[e.id] || {}).t || 0)) borrarL.push(e); }
+  for (const [id, d] of escribir) await S.db.collection('eventos').doc(id).set(d);
+  for (const e of borrarL) await borrarEvento(e);
+  if (escribir.length || borrarL.length) await new Promise(ok => setTimeout(ok, 30));
+  return subir;
+}
 async function sincronizarRecs(a, x){
   const L = x.link, pid = x.id, K = L.yo, lm = (S.db.crudo()[META] || {})[COL.plant] || {};
   let subir = false; const escribir = [], borrarL = [], vistos = new Set();
@@ -1401,6 +1447,8 @@ async function sincronizarCon(x){
   if (!a || a.app !== SH.app) return;
   a.docs = a.docs || {}; a.meta = a.meta || {}; a.recs = a.recs || {}; a.rmeta = a.rmeta || {};
   let subir = await sincronizarRecs(a, x);
+  a.evs = a.evs || {}; a.emeta = a.emeta || {};
+  if (await sincronizarEvs(a, x)) subir = true;
   // Copias rebotadas ("sh_" + un id que ya está en el archivo): se borran del archivo y de las dos apps
   for (const did of Object.keys(a.docs)){ const base = did.replace(/^(sh_)+/, ''); if (base !== did && (a.docs[base] || a.meta[base])){ delete a.docs[did]; a.meta[did] = {t: Date.now(), del:true}; subir = true; } }
   const crudo = S.db.crudo(), lm = (crudo[META] || {})[COL.movs] || {}, alias = L.alias || {};
@@ -2382,7 +2430,7 @@ async function enviarForm(){
   else if (F.tipo === 'ingreso' && prev && prev.neto != null && !$('#f-neto')){ data.neto = monto; data.descTotal = prev.descTotal ?? (prev.bhuDesc ? prev.bhuDesc / (prev.tasa || 1) : 0); data.monto = Math.round((monto + data.descTotal) * 100) / 100; }
   if (F.tipo === 'pago'){ const tr = $('#f-trasl'), d = tr && tr.checked ? difPago(monto) : null; if (d) data.traslado = {monto: d.debe <= 0.004 ? -monto : d.dif, moneda: F.moneda}; }
   const pendPago = !F.id && data.estado === 'pagado' && F.descontar !== false && !data.traslado ? pendienteDe(F) : null;
-  if (prev && prev.sh){ data.sh = prev.sh; if (prev.shCat && data.cat === prev.cat) data.shCat = prev.shCat; if (prev.shMon && data.moneda === prev.moneda) data.shMon = prev.shMon; } // sigue vinculado al archivo compartido
+  if (prev && prev.sh){ data.sh = prev.sh; if (prev.shCat && data.cat === prev.cat) data.shCat = prev.shCat; if (prev.shMon && data.moneda === prev.moneda) data.shMon = prev.shMon; if (prev.shEv && !data.evento){ data.shEv = prev.shEv; data.shFase = prev.shFase; } } // sigue vinculado al archivo compartido
   const ok = await guardar(F.id, data);
   if (!ok) return;
   if (conDesc && data.estado === 'pagado') await asegurarDescuentos(F.ingDesc, mkF, data.fecha, data.concepto, data.cuenta);
