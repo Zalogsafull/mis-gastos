@@ -1272,16 +1272,23 @@ function abrirUnirse(){
   UN = UN && UN.f === f ? UN : {f, paso:'inicio'};
   const pie = `<button type="button" class="btn ghost" data-act="unircancelar">Ahora no</button>`;
   let cuerpo = '';
-  if (UN.paso === 'inicio'){
+  const propia = PERS().find(p => p.link && p.link.f === f);
+  if (propia && UN.paso === 'inicio') UN.paso = 'propia';
+  if (UN.paso === 'propia'){
+    cuerpo = `<p style="margin:0">Este enlace es la invitación que le mandaste vos a <strong>${esc(propia.nombre)}</strong>, y ya está vinculada en tu app. No tenés que aceptarla: la tiene que abrir ${esc(propia.nombre)} en su teléfono.</p>
+      <div class="actions"><span></span><button type="button" class="btn primary" data-act="unircancelar">Entendido</button></div>`;
+  } else if (UN.paso === 'inicio'){
     cuerpo = !driveConectado() ? `<p style="margin:0">Te invitaron a compartir gastos. Para aceptar, primero conectá tu Google Drive: ahí se guarda el archivo que comparten.</p>
       <div class="actions">${pie}<button type="button" class="btn primary" data-act="unirdrive">Conectar Google Drive</button></div>`
       : `<p style="margin:0">Te invitaron a compartir gastos. Al tocar <strong>Aceptar</strong>, Google te muestra el archivo compartido: elegilo y tocá <em>Seleccionar</em>. Es una sola vez.</p>
       <div class="actions">${pie}<button type="button" class="btn primary" data-act="unirelegir">Aceptar</button></div>`;
   } else if (UN.paso === 'persona'){
-    const otro = UN.archivo.miembros[otraLetra(UN.yo)] || {}, sug = PERS().find(p => p.nombre.trim().toLowerCase() === String(otro.nombre || '').trim().toLowerCase());
+    const otro = UN.archivo.miembros[otraLetra(UN.yo)] || {}, sinT = t => String(t || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+      sug = PERS().find(p => p.email && otro.email && p.email.toLowerCase() === otro.email.toLowerCase()) || PERS().find(p => sinT(p.nombre) === sinT(otro.nombre));
     if (UN.pid === undefined) UN.pid = sug ? sug.id : '';
     cuerpo = `<p style="margin:0">Invitación de <strong>${esc(otro.nombre || otro.email || 'otra persona')}</strong>${otro.email ? ` (${esc(otro.email)})` : ''}. ¿Quién es en tu app?</p>
-      <div class="field"><span class="label">En tus Personas</span>${chipsDe('u', 'pid', [['', `Nueva: ${otro.nombre || 'Persona'}`]].concat(PERS().filter(p => !p.link).map(p => [p.id, p.nombre])), UN.pid)}</div>
+      <div class="field"><span class="label">En tus Personas</span>${chipsDe('u', 'pid', [['', `Nueva: ${otro.nombre || 'Persona'}`]].concat(PERS().map(p => [p.id, p.nombre])), UN.pid)}
+        ${UN.pid && (PER(UN.pid) || {}).link ? `<span class="note">Vos también le mandaste una invitación a ${esc(PER(UN.pid).nombre)}. Al seguir, quedan compartiendo este archivo, el que te mandó ${esc(otro.nombre || 'la otra persona')}, y tu invitación deja de usarse.</span>` : ''}</div>
       <div class="field"><label for="u-yo">Tu nombre (cómo te ve)</label><input class="inp" id="u-yo" value="${esc(S.cfg.miNombre || (UN.archivo.miembros[UN.yo] || {}).nombre || '')}" autocomplete="off"></div>
       <div class="actions">${pie}<button type="button" class="btn primary" data-act="unirpersona">Seguir</button></div>`;
   } else if (UN.paso === 'duplicados'){
@@ -1516,7 +1523,10 @@ function route(){
   document.querySelectorAll('.nav a').forEach(a => a.setAttribute('aria-current', a.dataset.v === S.view ? 'page' : 'false'));
   render();
 }
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => { // un enlace de invitación abierto con la app ya abierta
+  const mh = location.hash.match(/unirse=([\w-]+)/);
+  if (mh){ lsSet(LS_UNIRSE, mh[1]); S.unirseVisto = false; UN = null; cerrar(); try { history.replaceState(null, '', location.pathname + '#inicio'); } catch(e){} }
+  route(); });
 
 // ---------- Render ----------
 function render(){
@@ -3147,7 +3157,7 @@ document.addEventListener('click', async ev => {
   if (a === 'unirelegir'){ await unirElegir(t); return; }
   if (a === 'unirpersona'){ await unirPersona(); return; }
   if (a === 'unirfin'){ await unirFin(); return; }
-  if (a === 'unircancelar'){ UN = null; cerrar(); toast('Podés aceptar después abriendo de nuevo el enlace'); return; }
+  if (a === 'unircancelar'){ const propia = UN && UN.paso === 'propia'; UN = null; lsDel(LS_UNIRSE); cerrar(); if (!propia) toast('Podés aceptar después abriendo de nuevo el enlace'); return; }
   if (a === 'peredit'){ const x = PER(t.dataset.id); if (x) abrirPersona(x); return; }
   if (a === 'perdel'){ if (usaPersona(PE.id)){ toast('Tiene gastos cargados. Podés cambiarle el nombre, pero no borrarla.'); return; } if (!armar(t)) return; if (await guardarCfg({personas: PERS().filter(y => y.id !== PE.id)})){ cerrar(); render(); toast('Borrada'); } return; }
   if (a === 'saldar'){ const pid = t.dataset.pId, rec = t.dataset.dir === 'recibi', v = +t.dataset.v || '';
