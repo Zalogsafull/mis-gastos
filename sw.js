@@ -1,7 +1,7 @@
 // Mis gastos: guarda la app en el teléfono para que abra sin internet.
 // La página se busca primero en la red (así toma las actualizaciones) y, si no hay conexión, sale de la copia guardada.
 // Las librerías y fuentes de afuera salen de la copia guardada, y la primera vez se bajan.
-const CACHE = 'mis-gastos-v34';
+const CACHE = 'mis-gastos-v35';
 const PROPIOS = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(PROPIOS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

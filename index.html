@@ -740,7 +740,7 @@ const enMesPer = (m, pid, mk) => efectoPersona(m, pid, mk) - efectoPersona(m, pi
 const recPer = p => (p.tipo === 'ingreso' || p.tipo === 'gasto') && p.persona && PER(p.persona) && p.activa !== false;
 function obligaciones(pid, mk){
   if (mk < inicio()) return [];
-  return S.plant.filter(p => recPer(p) && p.persona === pid && !(p.desde && mk < p.desde) && !S.movs.some(m => m.plantilla === p.id && mesDe(m.fecha) === mk && (m.estado === 'pagado' || m.estado === 'omitido')))
+  return S.plant.filter(p => recPer(p) && p.persona === pid && !(p.desde && mk < p.desde) && !S.movs.some(m => m.plantilla === p.id && mesDe(m.fecha) === mk && (m.estado === 'pagado' || m.estado === 'omitido' || m.sh))) // m.sh: la otra persona ya lo marcó como pagado
     .map(p => ({p, v: (p.tipo === 'ingreso' ? 1 : -1) * (p.monto || 0) * tasaDe(p.moneda)}));
 }
 const balanceMes = (pid, mk) => { mk = mk || hoyMes(); return balancePersona(pid, mk) - balancePersona(pid, addMes(mk, -1)) + obligaciones(pid, mk).reduce((a, o) => a + o.v, 0); };
@@ -1353,6 +1353,8 @@ async function unirFin(){
 async function sincronizarRecs(a, x){
   const L = x.link, pid = x.id, K = L.yo, lm = (S.db.crudo()[META] || {})[COL.plant] || {};
   let subir = false; const escribir = [], borrarL = [], vistos = new Set();
+  for (const did of Object.keys(a.recs)){ const base = did.replace(/^(shp_)+/, ''); if (base !== did && (a.recs[base] || a.rmeta[base])){ delete a.recs[did]; a.rmeta[did] = {t: Date.now(), del:true}; subir = true; } }
+  for (const p of S.plant) if (!p.sh && p.id.startsWith('shp_') && a.recs[p.id.slice(4)]){ p.sh = {f:L.f, id:p.id.slice(4)}; const {id, ...prev} = p; escribir.push([p.id, prev]); }
   for (const p of S.plant){
     const did = recDocId(p, L); if (!(recCompartible(p, pid) || (p.sh && p.sh.f === L.f))) continue;
     vistos.add(did);
@@ -1394,9 +1396,12 @@ async function sincronizarCon(x){
   if (!a || a.app !== SH.app) return;
   a.docs = a.docs || {}; a.meta = a.meta || {}; a.recs = a.recs || {}; a.rmeta = a.rmeta || {};
   let subir = await sincronizarRecs(a, x);
+  // Copias rebotadas ("sh_" + un id que ya está en el archivo): se borran del archivo y de las dos apps
+  for (const did of Object.keys(a.docs)){ const base = did.replace(/^(sh_)+/, ''); if (base !== did && (a.docs[base] || a.meta[base])){ delete a.docs[did]; a.meta[did] = {t: Date.now(), del:true}; subir = true; } }
   const crudo = S.db.crudo(), lm = (crudo[META] || {})[COL.movs] || {}, alias = L.alias || {};
-  const docDe = m => alias[m.id] || (m.sh && m.sh.f === L.f ? m.sh.id : m.id);
+  const docDe = m => alias[m.id] || (m.sh && m.sh.f === L.f ? m.sh.id : m.id.startsWith('sh_') && !m.sh && a.docs[m.id.slice(3)] ? m.id.slice(3) : m.id);
   const escribir = [], borrarL = [];
+  for (const m of S.movs) if (!m.sh && !alias[m.id] && docDe(m) !== m.id){ const {id, ...prev} = m; escribir.push([m.id, {...prev, sh:{f:L.f, id:docDe(m)}}]); } // recupera el vínculo perdido
   // 1) Lo mío → archivo (si cambió después que lo del archivo)
   const vistos = new Set();
   for (const m of S.movs){
@@ -2372,6 +2377,7 @@ async function enviarForm(){
   else if (F.tipo === 'ingreso' && prev && prev.neto != null && !$('#f-neto')){ data.neto = monto; data.descTotal = prev.descTotal ?? (prev.bhuDesc ? prev.bhuDesc / (prev.tasa || 1) : 0); data.monto = Math.round((monto + data.descTotal) * 100) / 100; }
   if (F.tipo === 'pago'){ const tr = $('#f-trasl'), d = tr && tr.checked ? difPago(monto) : null; if (d) data.traslado = {monto: d.debe <= 0.004 ? -monto : d.dif, moneda: F.moneda}; }
   const pendPago = !F.id && data.estado === 'pagado' && F.descontar !== false && !data.traslado ? pendienteDe(F) : null;
+  if (prev && prev.sh){ data.sh = prev.sh; if (prev.shCat && data.cat === prev.cat) data.shCat = prev.shCat; if (prev.shMon && data.moneda === prev.moneda) data.shMon = prev.shMon; } // sigue vinculado al archivo compartido
   const ok = await guardar(F.id, data);
   if (!ok) return;
   if (conDesc && data.estado === 'pagado') await asegurarDescuentos(F.ingDesc, mkF, data.fecha, data.concepto, data.cuenta);
@@ -2562,6 +2568,7 @@ async function enviarPlant(){
   const data = {nombre:P.nombre, tipo:P.tipo, monto, moneda:P.moneda, activa:P.activa!==false, orden:P.orden||99};
   if (P.id){ if (P.desde) data.desde = P.desde; } else data.desde = S.mes && S.mes < hoyMes() ? S.mes : hoyMes();
   if (P.tipo === 'mover' && P.modo) data.modo = P.modo;
+  { const pv = P.id && S.plant.find(x => x.id === P.id); if (pv && pv.sh) data.sh = pv.sh; } // sigue vinculado al archivo compartido
   if (P.tipo === 'gasto'){ data.sub = SUB(P.sub) ? P.sub : null; data.cat = P.cat || 'Fijos'; data.tarjeta = P.tarjeta || null; data.cuenta = P.tarjeta ? null : P.cuenta; data.descuentaDe = P.descuentaDe && S.plant.some(x => x.id === P.descuentaDe) ? P.descuentaDe : null; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
   else if (P.tipo === 'ingreso'){ data.cuenta = P.cuenta; if (P.bhu) data.bhu = true; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
   else { data.de = P.de; data.a = P.a; const ma = monedasDe('c', P.a); data.monA = ma.includes(P.moneda) ? P.moneda : (ma.includes(monP().id) ? monP().id : ma[0]); }
