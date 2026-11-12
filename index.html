@@ -112,6 +112,11 @@ main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .monthnav{display:flex;align-items:center;gap:4px}
 .monthnav h1{font-size:22px;min-width:8.6em;text-align:center}
+.top .monthnav{flex:1 1 auto;min-width:0}
+.monthnav .actbtn{margin-left:auto}
+@media (max-width:380px){.monthnav h1{min-width:0;font-size:19px;flex:1;white-space:nowrap}.iconbtn.hoybtn[hidden]{display:none!important}}
+.actbtn.girando svg{animation:girar 1s linear infinite}
+@keyframes girar{to{transform:rotate(360deg)}}
 .iconbtn.hoybtn{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
 .iconbtn.hoybtn[hidden]{display:grid!important;visibility:hidden}
 .iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;width:38px;height:38px;display:grid;place-items:center}
@@ -1560,7 +1565,7 @@ function banner(){
   return '';
 }
 const chev = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="${d}"/></svg>`;
-const monthNav = () => `<div class="monthnav"><button class="iconbtn" data-act="mes" data-d="-1" aria-label="Mes anterior"${S.mes <= primerMesNav() ? ' disabled style="opacity:.35"' : ''}>${chev('M15 18l-6-6 6-6')}</button><h1>${nombreMes(S.mes)}</h1><button class="iconbtn" data-act="mes" data-d="1" aria-label="Mes siguiente">${chev('M9 18l6-6-6-6')}</button><button class="iconbtn hoybtn" data-act="mes-hoy" aria-label="Ir al mes actual" title="Ir al mes actual"${S.mes === hoyMes() ? ' hidden' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><circle cx="12" cy="15.5" r="1.8" fill="currentColor" stroke="none"/></svg></button></div>`;
+const monthNav = () => `<div class="monthnav"><button class="iconbtn" data-act="mes" data-d="-1" aria-label="Mes anterior"${S.mes <= primerMesNav() ? ' disabled style="opacity:.35"' : ''}>${chev('M15 18l-6-6 6-6')}</button><h1>${nombreMes(S.mes)}</h1><button class="iconbtn" data-act="mes" data-d="1" aria-label="Mes siguiente">${chev('M9 18l6-6-6-6')}</button><button class="iconbtn hoybtn" data-act="mes-hoy" aria-label="Ir al mes actual" title="Ir al mes actual"${S.mes === hoyMes() ? ' hidden' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><circle cx="12" cy="15.5" r="1.8" fill="currentColor" stroke="none"/></svg></button><button class="iconbtn actbtn" data-act="actualizarapp" aria-label="Actualizar la app y Google Drive" title="Actualizar la app y Google Drive"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16"/><path d="M20 21v-5h-5"/></svg></button></div>`;
 
 function etiqueta(m){
   if (m.tipo === 'gasto') return nomCat(m.cat);
@@ -3269,6 +3274,13 @@ document.addEventListener('click', async ev => {
   if (a === 'csv'){ exportar(); return; }
   if (a === 'driveconectar'){ conectarDrive(); return; }
   if (a === 'drivesync'){ sincronizarConToque(); return; }
+  if (a === 'actualizarapp'){ // trae y sube lo de Drive, busca la versión nueva de la app y recarga
+    if (t.classList.contains('girando')) return; t.classList.add('girando');
+    try {
+      if (driveConectado()){ if (!tokenValido()) await pedirToken(''); await sincronizar(true); }
+    } catch(e){ toast('No se pudo sincronizar con Drive. Igual se actualiza la app.'); }
+    try { const reg = 'serviceWorker' in navigator && await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch(e){}
+    setTimeout(() => location.reload(), 400); return; }
   if (a === 'drivedesc'){ if (!armar(t)) return; desconectarDrive(); return; }
   if (a === 'respaldo'){ exportarCopia(); return; }
   if (a === 'importar'){ const f = $('#imp-file'); if (f){ f.value = ''; f.click(); } else { location.hash = '#ajustes'; } return; }
