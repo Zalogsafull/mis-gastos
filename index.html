@@ -549,6 +549,7 @@ function itemsDelMes(mk){
     if (m.estado === 'omitido') continue;
     if (m.evento && (m.ajeno || pagoOtro(m))) continue; // lo pagó otra persona en un viaje o salida: se ve solo ahí
     if (m.viatico) continue; // pagado con los viáticos del viaje: ya salió del mes cuando cargaste los viáticos
+    if (m.carga && m.aportePor) continue; // viáticos que puso otra persona: no sale de tus cuentas
     const n = Math.max(1, m.cuotas|0 || 1);
     if (isCard(m)){
       const i = difMes(mk, mesResumen(m));
@@ -1114,6 +1115,7 @@ async function sincronizar(manual){
     if (cambiosDeDrive) await S.db.cargarCrudo(fus);
     if (!id || canon(fus) !== canon(rem)){ const {[META]: meta, ...datos} = fus; await subirArchivo(id, {app:'mis-gastos', formato:2, actualizado:new Date().toISOString(), datos, meta}); }
     try { await sincronizarCompartidos(manual); } catch(e){}
+    try { await sincronizarGrupos(manual); } catch(e){}
     D.pendiente = false; D.necesitaToque = false; lsSet(LSD.ultima, String(Date.now()));
     if (manual) toast(cambiosDeDrive ? 'Sincronizado: trajo cambios de Drive' : 'Sincronizado con Drive');
   } catch(e){
@@ -1158,12 +1160,18 @@ const miEmail = () => lsGet(LSD.email) || '';
 // ¿Este movimiento va al archivo compartido con esa persona? Gastos divididos solo con ella y pagos entre ustedes.
 // Recurrentes con esa persona (el apartamento que te paga, la vivienda que le pagás): se comparten la plantilla y lo que se marca cada mes
 const recCompartible = (p, pid) => !!p && (p.tipo === 'ingreso' || p.tipo === 'gasto') && p.persona === pid;
-const vaAlCompartido = (m, pid) => m.plantilla && m.cargo === pid ? recCompartible(S.plant.find(p => p.id === m.plantilla), pid)
+const vaAlCompartido = (m, pid) => m.evento && (EV(m.evento) || {}).tipo === 'evento' ? m.tipo === 'gasto' && !m.liq && m.estado !== 'omitido' && evCompartible(EV(m.evento), pid)
+  : m.carga && m.evento ? m.estado !== 'omitido' && evCompartible(EV(m.evento), pid) && (!m.aportePor || m.aportePor === pid)
+  : m.plantilla && m.cargo === pid ? recCompartible(S.plant.find(p => p.id === m.plantilla), pid)
   : m.estado !== 'omitido' && !m.plantilla && (!m.evento || (evCompartible(EV(m.evento), pid) && !m.division && !m.ajeno && !m.carga && (!m.liq || m.saldo === pid))) && (m.saldo === pid || (m.tipo === 'gasto' && m.split && (m.split.con || []).length === 1 && m.split.con[0] === pid));
 // Viajes con esa persona: se comparten el viaje (nombre y fechas) y sus gastos divididos con ella. El presupuesto y el archivado son de cada uno.
-const evCompartible = (e, pid) => !!e && e.tipo === 'viaje' && (e.participantes || []).some(p => p.id === pid);
+// Una comida o salida se comparte por el archivo de a dos si son ustedes dos (más invitados o personas sin correo); si hay más gente con correo, va por un archivo del grupo.
+const evCompartible = (e, pid) => !!e && !e.grupo && (e.participantes || []).some(p => p.id === pid) && (e.tipo === 'viaje' || !(e.participantes || []).some(p => p.id !== 'yo' && p.id !== pid && !p.invitado && (PER(p.id) || {}).email));
 const evDocId = (e, L) => e.sh && e.sh.f === L.f ? e.sh.id : e.id;
-const aEv = e => ({nombre:e.nombre, desde:e.desde, hasta:e.hasta || '', moneda:e.moneda});
+const aEvN = d => { const o = {nombre:d.nombre, desde:d.desde, hasta:d.hasta || '', moneda:d.moneda}; if (d.tipo === 'evento'){ o.tipo = 'evento'; o.inv = (d.inv || []).map(x => ({id:x.id, nombre:x.nombre})).sort((a, b) => a.id < b.id ? -1 : 1); } return o; };
+const aEvL = (e, pid) => aEvN({...e, inv: (e.participantes || []).filter(p => p.id !== 'yo' && p.id !== pid).map(p => ({id:p.id, nombre: p.invitado ? p.nombre : (nomPer(p.id) || p.nombre)}))});
+// Liquidaciones de una comida: ids de personas ↔ letras del archivo
+const liqN = (l, toN) => ({id:l.id, de:toN(l.de), a:toN(l.a), monto:+l.monto || 0, fecha:l.fecha});
 const recDocId = (p, L) => p.sh && p.sh.f === L.f ? p.sh.id : p.id;
 // Plantilla recurrente → registro neutro (quién le paga a quién, con las letras A y B)
 function aRec(p, L){
@@ -1182,11 +1190,23 @@ function deRec(d, pid, L, prev){
   return p;
 }
 // Movimiento de la app → registro neutro del archivo
+// Gasto de una comida o salida ↔ registro neutro (quién pagó y entre quiénes se divide, con letras para la gente de las apps)
+const aGev = (m, e, toN, evId) => ({tipo:'gev', ev:evId, fecha:m.fecha, concepto:m.concepto || '', cat: m.shCat || m.cat, monto:+m.monto || 0, moneda: m.shMon || m.moneda, tasa:m.tasa || tasaDe(m.moneda), pagador: toN(m.pagador || 'yo'), division:(m.division || ['yo']).map(toN)});
+function deGev(d, ev, fromN, prev, previo, nom){
+  const monOk = S.cfg.monedas.some(x => x.id === d.moneda), pg = fromN(d.pagador), yo = pg === 'yo';
+  const m = {fecha:d.fecha, tipo:'gasto', cat: CAT(d.cat) ? d.cat : (prev.cat || catDefecto()), shCat: CAT(d.cat) ? null : d.cat, concepto:d.concepto, monto:+d.monto || 0, moneda: monOk ? d.moneda : monP().id, shMon: monOk ? null : d.moneda, tasa:d.tasa || 1,
+    cuotas:1, nota: previo ? (prev.nota || '') : `Lo cargó ${nom}`, plantilla:null, creado: prev.creado || Date.now(), evento:ev.id, pagador:pg, division:(d.division || []).map(fromN), ajeno:!yo};
+  if (yo){ m.cuenta = prev.cuenta || cuentaDefecto(); m.tarjeta = prev.tarjeta || null; m.estado = prev.estado === 'pagado' ? 'pagado' : 'pend'; } // dice que lo pagaste vos: confirmás con qué
+  else { m.cuenta = null; m.tarjeta = null; m.estado = 'pagado'; }
+  return m;
+}
 function aNeutro(m, pid, L){
   const K = L.yo, O = otraLetra(K);
   if (m.plantilla && m.cargo === pid){ const p = S.plant.find(x => x.id === m.plantilla);
     return {tipo:'cuota', rec: p ? recDocId(p, L) : m.plantilla, mes: mesDe(m.fecha), fecha:m.fecha, monto:+m.monto || 0, moneda: m.shMon || m.moneda, tasa:m.tasa || tasaDe(m.moneda),
       forma: m.estado === 'omitido' ? 'omitido' : m.compensado ? 'descontado' : 'efectivo'}; }
+  if (m.evento && (EV(m.evento) || {}).tipo === 'evento') return aGev(m, EV(m.evento), x => x === 'yo' ? K : x === pid ? O : x, evDocId(EV(m.evento), L));
+  if (m.carga){ const e = EV(m.evento); return {tipo:'aporte', ev: e ? evDocId(e, L) : m.shEv, fecha:m.fecha, monto:+m.monto || 0, moneda: m.shMon || m.moneda, tasa:m.tasa || tasaDe(m.moneda), de: m.aportePor === pid ? O : K}; }
   // Las notas quedan en cada app. En los pagos, el texto lo pone cada app desde su lado ("Lu me pagó" / "Le pagué a Gonza").
   const base = {fecha:m.fecha, concepto:m.concepto || '', monto:+m.monto || 0, moneda: m.shMon || m.moneda, tasa:m.tasa || tasaDe(m.moneda)};
   if (m.saldo === pid){ const p = {...base, concepto:'', tipo:'pago', de: m.tipo === 'ingreso' ? O : K, a: m.tipo === 'ingreso' ? K : O};
@@ -1194,7 +1214,7 @@ function aNeutro(m, pid, L){
     return p; }
   const sp = m.split, pa = sp.partes || {};
   const g = {...base, tipo:'gasto', cat: m.shCat || m.cat, cuotas: Math.max(1, m.cuotas|0 || 1), mes: mesPer(m), pagador: sp.pagador === pid ? O : K, partes: {[K]: +pa.yo || 0, [O]: +pa[pid] || 0}};
-  const e = m.evento && EV(m.evento); if (e && evCompartible(e, pid)){ g.ev = evDocId(e, L); g.fase = m.fase || 'viaje'; }
+  const e = m.evento && EV(m.evento); if (e && evCompartible(e, pid)){ g.ev = evDocId(e, L); g.fase = m.fase || 'viaje'; if (m.viatico) g.pozo = true; }
   else if (m.shEv){ g.ev = m.shEv; g.fase = m.shFase || 'viaje'; } // viaje que todavía no está en esta app: se devuelve tal cual
   return g;
 }
@@ -1210,16 +1230,27 @@ function deNeutro(d, pid, L, previo){
     else m.estado = prev.estado === 'pagado' && !prev.compensado ? 'pagado' : 'pend'; // lo pagó en efectivo: confirmás a qué cuenta entró o de cuál salió
     return m;
   }
+  if (d.tipo === 'gev'){
+    const ev = (S.evs || []).find(e => evCompartible(e, pid) && evDocId(e, L) === d.ev); if (!ev) return null;
+    return deGev(d, ev, x => x === K ? 'yo' : x === otraLetra(K) ? pid : x, prev, previo, nom);
+  }
+  if (d.tipo === 'aporte'){ // viáticos que puso alguien
+    const ev = (S.evs || []).find(e => evCompartible(e, pid) && evDocId(e, L) === d.ev); if (!ev) return null;
+    const mio = d.de === K, mon = S.cfg.monedas.some(x => x.id === d.moneda) ? d.moneda : monP().id;
+    return {fecha:d.fecha, tipo:'gasto', cat: prev.cat || catViajes(), concepto: mio ? `Viáticos · ${ev.nombre}` : `Viáticos de ${nom} · ${ev.nombre}`, monto:+d.monto || 0, moneda:mon, tasa:d.tasa || 1,
+      cuenta: mio ? (prev.cuenta || cuentaDefecto()) : null, tarjeta:null, cuotas:1, estado: mio ? (prev.estado || 'pend') : 'pagado', nota: previo ? (prev.nota || '') : `Lo cargó ${nom}`, plantilla:null, creado: prev.creado || Date.now(),
+      evento:ev.id, carga:true, aportePor: mio ? null : pid};
+  }
   const monOk = S.cfg.monedas.some(x => x.id === d.moneda);
   const base = {fecha:d.fecha, concepto:d.concepto, monto:+d.monto || 0, moneda: monOk ? d.moneda : monP().id, tasa:d.tasa || 1, nota: previo ? (prev.nota || '') : `Lo cargó ${nom}`, cuotas:1, creado: prev.creado || Date.now()};
   if (!monOk) base.shMon = d.moneda; // moneda que no tenés: se muestra en la principal y se devuelve tal cual
   if (d.tipo === 'pago'){
     const recibo = d.a === K; // ella me pagó → ingreso mío; yo le pagué → gasto mío
     const ev = d.ev && (S.evs || []).find(e => evCompartible(e, pid) && evDocId(e, L) === d.ev);
-    if (ev){ // pago entre ustedes por un viaje: queda en el viaje; por defecto en los viáticos (lo podés cambiar a una cuenta)
-      const enV = prev.liq ? !!prev.viatico : true;
+    if (ev){ // pago entre ustedes por un viaje: queda en el viaje; entra o sale de una cuenta que confirmás
+      const enV = prev.liq ? !!prev.viatico : false;
       return {...base, tipo: recibo ? 'ingreso' : 'gasto', cat: recibo ? 'Ingreso' : (prev.cat || catViajes()), saldo:pid, cuenta: enV ? null : (prev.cuenta || cuentaDefecto()), tarjeta:null, viatico: enV || null,
-        evento:ev.id, fase:'viaje', liq:true, shEv:null, concepto: recibo ? `${nom} me pagó · ${ev.nombre}` : `Le pagué a ${nom} · ${ev.nombre}`, estado:'pagado'};
+        evento:ev.id, fase:'viaje', liq:true, shEv:null, concepto: recibo ? `${nom} me pagó · ${ev.nombre}` : `Le pagué a ${nom} · ${ev.nombre}`, estado: enV || prev.estado === 'pagado' ? 'pagado' : 'pend'};
     }
     return {...base, tipo: recibo ? 'ingreso' : 'gasto', cat: recibo ? 'Ingreso' : (prev.cat || catDefecto()), saldo:pid, cuenta: prev.cuenta || cuentaDefecto(), tarjeta:null,
       concepto: recibo ? `${nom} me pagó` : `Le pagué a ${nom}`, estado: prev.estado === 'pagado' ? 'pagado' : 'pend', shEv: d.ev || null};
@@ -1230,7 +1261,9 @@ function deNeutro(d, pid, L, previo){
   if (modo) m.split.modo = modo;
   const ev = d.ev && (S.evs || []).find(e => evCompartible(e, pid) && evDocId(e, L) === d.ev);
   m.evento = ev ? ev.id : null; m.fase = ev ? (d.fase || 'viaje') : null; m.shEv = !ev && d.ev ? d.ev : null; m.shFase = !ev && d.ev ? (d.fase || 'viaje') : null;
-  if (yoPague && ev && m.fase === 'viaje'){ m.tarjeta = prev.tarjeta || null; m.viatico = m.tarjeta ? null : true; m.cuenta = null; m.estado = 'pagado'; } // dice que lo pagaste vos en el viaje: con viáticos, salvo que ya le hayas puesto tarjeta
+  if (ev && m.fase === 'viaje' && d.pozo){ m.viatico = true; m.cuenta = null; m.tarjeta = null; m.estado = 'pagado'; } // pagado con los viáticos (son de los dos)
+  else if (ev && m.fase === 'viaje') m.viatico = null;
+  if (ev && m.fase === 'viaje' && d.pozo){ /* resuelto arriba */ }
   else if (yoPague){ m.cuenta = prev.cuenta || cuentaDefecto(); m.tarjeta = prev.tarjeta || null; m.estado = prev.estado === 'pagado' ? 'pagado' : 'pend'; } // dice que lo pagaste vos: queda pendiente hasta que confirmes con qué
   else { m.cuenta = null; m.tarjeta = null; m.estado = 'pagado'; if (d.mes) m.inicioCuotas = d.mes; }
   return m;
@@ -1303,11 +1336,15 @@ function abrirUnirse(){
   UN = UN && UN.f === f ? UN : {f, paso:'inicio'};
   const pie = `<button type="button" class="btn ghost" data-act="unircancelar">Ahora no</button>`;
   let cuerpo = '';
-  const propia = PERS().find(p => p.link && p.link.f === f);
-  if (propia && UN.paso === 'inicio') UN.paso = 'propia';
+  const propia = PERS().find(p => p.link && p.link.f === f), evPropio = (S.evs || []).find(e => e.grupo && e.grupo.f === f);
+  if ((propia || evPropio) && UN.paso === 'inicio') UN.paso = 'propia';
   if (UN.paso === 'propia'){
-    cuerpo = `<p style="margin:0">Este enlace es la invitación que le mandaste vos a <strong>${esc(propia.nombre)}</strong>, y ya está vinculada en tu app. No tenés que aceptarla: la tiene que abrir ${esc(propia.nombre)} en su teléfono.</p>
+    cuerpo = propia ? `<p style="margin:0">Este enlace es la invitación que le mandaste vos a <strong>${esc(propia.nombre)}</strong>, y ya está vinculada en tu app. No tenés que aceptarla: la tiene que abrir ${esc(propia.nombre)} en su teléfono.</p>
+      <div class="actions"><span></span><button type="button" class="btn primary" data-act="unircancelar">Entendido</button></div>`
+      : `<p style="margin:0"><strong>${esc(evPropio.nombre)}</strong> ya está en tu app y se sincroniza sola. Este enlace es para la otra gente de la salida.</p>
       <div class="actions"><span></span><button type="button" class="btn primary" data-act="unircancelar">Entendido</button></div>`;
+  } else if (UN.paso === 'grupo'){
+    cuerpo = pasoGrupo();
   } else if (UN.paso === 'inicio'){
     cuerpo = !driveConectado() ? `<p style="margin:0">Te invitaron a compartir gastos. Para aceptar, primero conectá tu Google Drive: ahí se guarda el archivo que comparten.</p>
       <div class="actions">${pie}<button type="button" class="btn primary" data-act="unirdrive">Conectar Google Drive</button></div>`
@@ -1340,6 +1377,11 @@ async function unirElegir(btn){
   if (!id) return;
   if (id !== UN.f){ toast('Ese no es el archivo de la invitación. Elegí el que dice mis-gastos-compartido.'); return; }
   let a = null; try { a = await bajarArchivo(id); } catch(e){}
+  if (a && a.app === GR.app){ // una salida de grupo
+    const yo = miEmail().toLowerCase(), l = Object.keys(a.miembros || {}).find(k => (a.miembros[k].email || '').toLowerCase() === yo);
+    if (!l){ toast('Esta invitación es para otro correo. Conectá Drive con la cuenta a la que te llegó.'); return; }
+    UN.yo = l; UN.archivo = a; UN.paso = 'grupo'; UN.mapa = null; abrirUnirse(); return;
+  }
   if (!a || a.app !== SH.app){ toast(a ? 'Ese archivo no es de gastos compartidos' : 'Todavía no llegó la invitación. Probá en un minuto.'); return; }
   const yo = miEmail().toLowerCase(), M = a.miembros || {};
   UN.yo = (M.A && M.A.email && M.A.email.toLowerCase() === yo) ? 'A' : 'B';
@@ -1390,9 +1432,9 @@ async function sincronizarEvs(a, x){
     vistos.add(did);
     const tl = (lm[e.id] || {}).t || 0, td = (a.emeta[did] || {}).t || 0;
     if (!evCompartible(e, pid)){ if (a.evs[did] && tl > td){ delete a.evs[did]; a.emeta[did] = {t: tl, del:true}; subir = true; } continue; }
-    const n = {...aEv(e), autor: (a.evs[did] || {}).autor || K};
+    const n = {...aEvL(e, pid), liq:(a.evs[did] || {}).liq, autor: (a.evs[did] || {}).autor || K};
     if (!a.evs[did] && !(a.emeta[did] || {}).del){ a.evs[did] = n; a.emeta[did] = {t: tl || Date.now()}; subir = true; }
-    else if (a.evs[did] && tl > td && canon(aEv(e)) !== canon(aEv(a.evs[did]))){ a.evs[did] = n; a.emeta[did] = {t: tl}; subir = true; }
+    else if (a.evs[did] && tl > td && canon(aEvL(e, pid)) !== canon(aEvN(a.evs[did]))){ a.evs[did] = n; a.emeta[did] = {t: tl}; subir = true; }
   }
   for (const [lid, mt] of Object.entries(lm)) if (mt.del){
     const did = lid.startsWith('she_') ? lid.slice(4) : lid;
@@ -1406,17 +1448,158 @@ async function sincronizarEvs(a, x){
       // Si ya tenías ese mismo viaje con ella (mismas fechas), se vinculan en vez de duplicarse
       const ya = evs.find(v => evCompartible(v, pid) && !v.sh && v.desde === d.desde && !a.evs[v.id]);
       if (ya){ const {id, ...prev} = ya; escribir.push([ya.id, {...prev, sh:{f:L.f, id:did}}]); continue; }
-      escribir.push(['she_' + did, {tipo:'viaje', ...aEv(d), participantes:[{id:'yo', nombre:miNombre()}, {id:pid, nombre:nomPer(pid)}], liquidaciones:[], cerrado:false, presupuesto:0, creado:Date.now(), sh:{f:L.f, id:did}}]);
+      const {inv, tipo, ...base} = aEvN(d);
+      escribir.push(['she_' + did, {tipo: d.tipo === 'evento' ? 'evento' : 'viaje', ...base, participantes:[{id:'yo', nombre:miNombre()}, {id:pid, nombre:nomPer(pid)}].concat((inv || []).map(x => ({id:x.id, nombre:x.nombre, invitado:true}))), liquidaciones:[], cerrado:false, creado:Date.now(), sh:{f:L.f, id:did}}]);
       continue;
     }
     const tl = (lm[e.id] || {}).t || 0;
-    if (td > tl && canon(aEv(e)) !== canon(aEv(d))){ const {id, ...prev} = e; escribir.push([e.id, {...prev, ...aEv(d)}]); }
+    if (td > tl && canon(aEvL(e, pid)) !== canon(aEvN(d))){ const {id, ...prev} = e, {inv, tipo, ...base} = aEvN(d);
+      const parts = (prev.participantes || []).filter(p => p.id === 'yo' || p.id === pid).concat((inv || []).map(x => ({id:x.id, nombre:x.nombre, invitado: !PER(x.id)})));
+      escribir.push([e.id, {...prev, ...base, participantes: prev.tipo === 'evento' ? parts : prev.participantes}]); }
   }
   for (const [did, mt] of Object.entries(a.emeta)) if (mt.del){ const e = porDoc[did]; if (e && mt.t > ((lm[e.id] || {}).t || 0)) borrarL.push(e); }
   for (const [id, d] of escribir) await S.db.collection('eventos').doc(id).set(d);
   for (const e of borrarL) await borrarEvento(e);
   if (escribir.length || borrarL.length) await new Promise(ok => setTimeout(ok, 30));
+  // Pagos entre la gente de una comida: se juntan los de las dos apps
+  const toN = x => x === 'yo' ? K : x === pid ? otraLetra(K) : x, fromN = x => x === K ? 'yo' : x === otraLetra(K) ? pid : x;
+  for (const e of (S.evs || []).filter(e => e.tipo === 'evento' && evCompartible(e, pid))){
+    const d = a.evs[evDocId(e, L)]; if (!d) continue;
+    if (await unirLiqs(e, d, toN, fromN)) subir = true;
+  }
   return subir;
+}
+// ---------- Comidas y salidas con más gente que usa la app: un archivo del grupo en Google Drive ----------
+// El archivo tiene a cada uno con una letra (A, B, C…), la salida, sus gastos y los pagos entre ustedes. Los invitados sin correo van con su nombre.
+const GR = {app:'mis-gastos-grupo'};
+const LETRAS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const conCorreo = e => (e.participantes || []).filter(p => p.id !== 'yo' && !p.invitado && (PER(p.id) || {}).email);
+// ¿Se ofrece crear el archivo del grupo? Cuando hay alguien con correo y la salida no va por el archivo de a dos
+const ofreceGrupo = e => !!e && e.tipo === 'evento' && !e.grupo && conCorreo(e).length > 0 && !personasVinculadas().some(x => evCompartible(e, x.id));
+const grToN = g => x => { if (x === 'yo') return g.yo; const l = Object.keys(g.mapa || {}).find(k => g.mapa[k] === x); return l || x; };
+const grFromN = g => x => (g.mapa || {})[x] !== undefined ? g.mapa[x] : x;
+const aEvG = e => aEvN({...e, tipo:'evento', inv:(e.participantes || []).filter(p => p.id !== 'yo' && !Object.values(e.grupo.mapa || {}).includes(p.id)).map(p => ({id:p.id, nombre: p.invitado ? p.nombre : (nomPer(p.id) || p.nombre)}))});
+async function crearGrupo(e, btn){
+  if (!driveConectado()){ toast('Primero conectá Google Drive en Ajustes → Tus datos'); return; }
+  if (!(await asegurarToken())) return;
+  const gente = conCorreo(e); if (!gente.length) return;
+  if (btn){ btn.disabled = true; btn.textContent = 'Compartiendo…'; }
+  try {
+    const mapa = {A:'yo'}, miembros = {A:{email: miEmail(), nombre: miNombre()}};
+    gente.forEach((p, i) => { const l = LETRAS[i + 1]; mapa[l] = p.id; miembros[l] = {email: PER(p.id).email.toLowerCase(), nombre: nomPer(p.id)}; });
+    const g = {f:null, yo:'A', mapa}, toN = grToN(g), t = Date.now(), docs = {}, meta = {};
+    for (const m of gastosEv(e.id)){ docs[m.id] = {...aGev(m, e, toN, 'ev'), autor:'A'}; meta[m.id] = {t}; }
+    const contenido = {app:GR.app, v:1, miembros, ev:{...aEvG({...e, grupo:g}), liq:(e.liquidaciones || []).map(l => liqN(l, toN))}, evt:t, docs, meta, actualizado:new Date().toISOString()};
+    const b = 'mg' + Math.random().toString(36).slice(2), nombreArch = `mis-gastos-grupo-${e.nombre}.json`.replace(/[^\w.\-áéíóúñÁÉÍÓÚÑ]/g, '_');
+    const body = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name:nombreArch, mimeType:'application/json', description:'Una salida compartida de la app Mis gastos. No lo edites a mano.'})}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(contenido)}\r\n--${b}--`;
+    const j = await (await gapi('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {method:'POST', headers:{'Content-Type':'multipart/related; boundary=' + b}, body})).json();
+    const msg = `Te sumé a "${e.nombre}" en Mis gastos para dividir los gastos. Abrí este enlace y tocá Aceptar: ${enlaceUnirse(j.id)}`;
+    for (const l of Object.keys(miembros).filter(l => l !== 'A'))
+      await gapi(`https://www.googleapis.com/drive/v3/files/${j.id}/permissions?sendNotificationEmail=true&emailMessage=${encodeURIComponent(msg)}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({role:'writer', type:'user', emailAddress:miembros[l].email})});
+    await S.db.collection('eventos').doc(e.id).update({grupo:{f:j.id, yo:'A', mapa}});
+    S.textoCompartir = `Te sumé a "${e.nombre}" en Mis gastos. Abrí este enlace y tocá Aceptar: ${enlaceUnirse(j.id)}`;
+    toast(`Listo: les llegó un correo a ${gente.map(p => nomPer(p.id)).join(' y ')}`);
+    render();
+  } catch(err){
+    if (btn){ btn.disabled = false; btn.textContent = 'Compartir por correo'; }
+    toast(err && err.code === 'token' ? 'Tocá de nuevo para renovar el permiso de Drive' : 'No se pudo compartir la salida');
+  }
+}
+// Unirse a una salida de grupo: cada letra del archivo se asocia a una persona de tu app (o se crea)
+function pasoGrupo(){
+  const a = UN.archivo, otros = Object.keys(a.miembros || {}).filter(l => l !== UN.yo);
+  UN.mapa = UN.mapa || {};
+  for (const l of otros) if (UN.mapa[l] === undefined){ const mb = a.miembros[l] || {}, sinT = t => String(t || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const p = PERS().find(p => p.email && mb.email && p.email.toLowerCase() === mb.email.toLowerCase()) || PERS().find(p => sinT(p.nombre) === sinT(mb.nombre)); UN.mapa[l] = p ? p.id : ''; }
+  const quien = ((a.miembros || {}).A || {}).nombre || 'Alguien';
+  return `<p style="margin:0">${esc(quien)} te sumó a <strong>${esc((a.ev || {}).nombre || 'una salida')}</strong>. ¿Quién es cada uno en tu app?</p>
+    ${otros.map(l => { const mb = a.miembros[l] || {}; return `<div class="field"><span class="label">${esc(mb.nombre || mb.email || l)}${mb.email ? ` · ${esc(mb.email)}` : ''}</span>${chipsDe('ug', l, [['', `Nueva: ${mb.nombre || 'Persona'}`]].concat(PERS().map(p => [p.id, p.nombre])), UN.mapa[l])}</div>`; }).join('')}
+    <div class="field"><label for="u-yo">Tu nombre (cómo te ven)</label><input class="inp" id="u-yo" value="${esc(S.cfg.miNombre || (a.miembros[UN.yo] || {}).nombre || '')}" autocomplete="off"></div>
+    <div class="actions"><button type="button" class="btn ghost" data-act="unircancelar">Ahora no</button><button type="button" class="btn primary" data-act="unirgrupo">Listo</button></div>`;
+}
+async function unirGrupo(){
+  const a = UN.archivo, minombre = ($('#u-yo')?.value || '').trim();
+  let personas = PERS(); const mapa = {[UN.yo]:'yo'};
+  for (const l of Object.keys(a.miembros || {}).filter(l => l !== UN.yo)){
+    const mb = a.miembros[l] || {}; let pid = UN.mapa[l];
+    if (!pid){ pid = genId('p'); personas = personas.concat([{id:pid, nombre: mb.nombre || 'Persona', email: mb.email || ''}]); }
+    else personas = personas.map(y => y.id === pid && !y.email && mb.email ? {...y, email: mb.email} : y);
+    mapa[l] = pid;
+  }
+  const patch = {personas}; if (minombre) patch.miNombre = minombre;
+  if (!(await guardarCfg(patch))) return;
+  const ev = a.ev || {}, {inv, tipo, ...base} = aEvN({...ev, tipo:'evento'});
+  const parts = [{id:'yo', nombre: minombre || miNombre()}].concat(Object.entries(mapa).filter(([, id]) => id !== 'yo').map(([, id]) => ({id, nombre: (personas.find(p => p.id === id) || {}).nombre || 'Persona'})), (inv || []).map(x => ({id:x.id, nombre:x.nombre, invitado:true})));
+  await S.db.collection('eventos').doc('shg_' + UN.f).set({tipo:'evento', ...base, participantes:parts, liquidaciones:[], cerrado:false, creado:Date.now(), grupo:{f:UN.f, yo:UN.yo, mapa}});
+  lsDel(LS_UNIRSE); UN = null; cerrar(); toast('Listo: la salida está en Viajes');
+  await new Promise(ok => setTimeout(ok, 60));
+  try { await sincronizarGrupos(true); } catch(e){}
+}
+let GRB = false;
+async function sincronizarGrupos(manual){
+  if (GRB || !driveConectado() || !S.db || !S.db.local || !tokenValido()) return;
+  GRB = true;
+  try { for (const e of (S.evs || []).filter(e => e.grupo && e.grupo.f)) await sincronizarGrupo(EV(e.id)); }
+  catch(err){ if (manual) toast('No se pudieron sincronizar las salidas compartidas'); }
+  finally { GRB = false; }
+}
+async function sincronizarGrupo(e){
+  if (!e) return;
+  const g = e.grupo, K = g.yo, toN = grToN(g), fromN = grFromN(g);
+  let a; try { a = await bajarArchivo(g.f); } catch(err){ if (err && err.status === 404) return; throw err; }
+  if (!a || a.app !== GR.app) return;
+  a.docs = a.docs || {}; a.meta = a.meta || {}; a.ev = a.ev || {};
+  const crudo = S.db.crudo(), lmE = (crudo[META] || {}).eventos || {}, lm = (crudo[META] || {})[COL.movs] || {};
+  let subir = false;
+  // La salida (nombre, fechas, invitados)
+  const tl = (lmE[e.id] || {}).t || 0, td = a.evt || 0;
+  if (canon(aEvG(e)) !== canon(aEvN({...a.ev, tipo:'evento'}))){
+    if (tl > td){ a.ev = {...aEvG(e), liq:a.ev.liq}; a.evt = tl; subir = true; }
+    else { const {inv, tipo, ...base} = aEvN({...a.ev, tipo:'evento'}), miembrosL = Object.values(g.mapa || {});
+      const parts = (e.participantes || []).filter(p => p.id === 'yo' || miembrosL.includes(p.id)).concat((inv || []).map(x => ({id:x.id, nombre:x.nombre, invitado:true})));
+      await S.db.collection('eventos').doc(e.id).update({...base, participantes:parts}); await new Promise(ok => setTimeout(ok, 30)); e = EV(e.id) || e; }
+  }
+  if (await unirLiqs(e, a.ev, toN, fromN)) subir = true;
+  // Los gastos
+  const docDe = m => m.sh && m.sh.f === g.f ? m.sh.id : m.id;
+  const mios = S.movs.filter(m => m.evento === e.id && m.tipo === 'gasto' && !m.liq && m.estado !== 'omitido'), vistos = new Set(), escribir = [], borrarL = [];
+  for (const m of mios){
+    const did = docDe(m); vistos.add(did);
+    const tl2 = (lm[m.id] || {}).t || 0, td2 = (a.meta[did] || {}).t || 0, n = {...aGev(m, e, toN, 'ev'), autor: (a.docs[did] || {}).autor || K};
+    if (!a.docs[did] && !(a.meta[did] || {}).del){ a.docs[did] = n; a.meta[did] = {t: tl2 || Date.now()}; subir = true; }
+    else if (a.docs[did] && tl2 > td2 && canon({...n, autor:undefined}) !== canon({...a.docs[did], autor:undefined})){ a.docs[did] = n; a.meta[did] = {t: tl2}; subir = true; }
+  }
+  for (const [lid, mt] of Object.entries(lm)) if (mt.del){
+    const did = lid.startsWith('sh_') ? lid.slice(3) : lid;
+    if (a.docs[did] && !vistos.has(did) && mt.t > ((a.meta[did] || {}).t || 0)){ delete a.docs[did]; a.meta[did] = {t: mt.t, del:true}; subir = true; }
+  }
+  const porDoc = {}; for (const m of S.movs.filter(m => m.evento === e.id)) porDoc[docDe(m)] = m;
+  for (const [did, d] of Object.entries(a.docs)){
+    const m = porDoc[did], td2 = (a.meta[did] || {}).t || 0, nom = ((a.miembros || {})[d.autor] || {}).nombre || 'otra persona';
+    if (!m){ if (d.autor !== K) escribir.push(['sh_' + did, {...deGev(d, e, fromN, {}, null, nom), sh:{f:g.f, id:did}}]); continue; }
+    const tl2 = (lm[m.id] || {}).t || 0;
+    if (td2 > tl2 && canon(aGev(m, e, toN, 'ev')) !== canon({...d, autor:undefined})){ const {id, ...prev} = m; escribir.push([m.id, {...prev, ...deGev(d, e, fromN, prev, prev, nom), sh: m.sh}]); }
+  }
+  for (const [did, mt] of Object.entries(a.meta)) if (mt.del){ const m = porDoc[did]; if (m && mt.t > ((lm[m.id] || {}).t || 0)) borrarL.push(m.id); }
+  for (const [id, d] of escribir){ const limpio = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined)); await S.db.collection(COL.movs).doc(id).set(limpio); }
+  for (const id of borrarL) await S.db.collection(COL.movs).doc(id).delete();
+  if (a.miembros && a.miembros[K] && S.cfg.miNombre && a.miembros[K].nombre !== S.cfg.miNombre){ a.miembros[K].nombre = S.cfg.miNombre; subir = true; }
+  if (subir){ a.actualizado = new Date().toISOString(); await subirArchivo(g.f, a); }
+}
+async function unirLiqs(e, d, toN, fromN){
+  const loc = e.liquidaciones || [], fil = d.liq || [], idsL = new Set(loc.map(l => l.id)), idsF = new Set(fil.map(l => l.id));
+  const faltanF = loc.filter(l => !idsF.has(l.id)), faltanL = fil.filter(l => !idsL.has(l.id));
+  if (faltanF.length) d.liq = fil.concat(faltanF.map(l => liqN(l, toN)));
+  if (faltanL.length){
+    const nuevas = faltanL.map(l => ({id:l.id, de:fromN(l.de), a:fromN(l.a), monto:+l.monto || 0, fecha:l.fecha}));
+    await S.db.collection('eventos').doc(e.id).update({liquidaciones: loc.concat(nuevas)});
+    for (const l of nuevas) if (l.de === 'yo' || l.a === 'yo'){ // te toca a vos: queda pendiente para que confirmes la cuenta
+      const pago = l.de === 'yo', otro = pago ? l.a : l.de, mon = e.moneda;
+      await guardar(null, {fecha:l.fecha || hoy(), tipo: pago ? 'gasto' : 'ingreso', cat: pago ? ((gastosEv(e.id)[0] || {}).cat || catDefecto()) : 'Ingreso', concepto: pago ? `Pago a ${nomP(e, otro)} · ${e.nombre}` : `Cobro a ${nomP(e, otro)} · ${e.nombre}`,
+        monto:l.monto, moneda:mon, tasa: esPpal(mon) ? 1 : tasaDe(mon), cuenta:cuentaDefecto(), tarjeta:null, cuotas:1, estado:'pend', nota:'', plantilla:null, creado:Date.now(), evento:e.id, liq:l.id});
+    }
+  }
+  return faltanF.length > 0;
 }
 async function sincronizarRecs(a, x){
   const L = x.link, pid = x.id, K = L.yo, lm = (S.db.crudo()[META] || {})[COL.plant] || {};
@@ -2202,7 +2385,7 @@ function abrirAyuda(){
         <li><strong>Cuentas</strong>: el saldo de cada cuenta en cada moneda y tu capital ahorrado.</li>
         <li><strong>Análisis</strong>: gráficas mes a mes, tasa de ahorro y en qué se va la plata.</li></ul></div>
       <div><h4>Viajes y salidas</h4><ul>
-        <li>En <strong>Viajes</strong> creás un viaje con fechas, un presupuesto de viáticos y con quién vas (de tus Personas). Aparece en el inicio con su botón para cargar gastos.</li>
+        <li>En <strong>Viajes</strong> creás un viaje con fechas y con quién vas (de tus Personas). Cada uno carga sus viáticos desde una cuenta; lo que se paga con viáticos o se divide durante el viaje queda en el viaje y se salda ahí. Con tarjeta va al resumen de la tarjeta.</li>
         <li>Lo que cargás con ese botón es un gasto común que además resta de los viáticos. Lo previo (vuelos, reservas) lo cargás con el + de siempre y elegís el viaje en "¿Es de un viaje?".</li>
         <li>Si un gasto lo pagó otra persona, usá Dividir → pagó ella: no aparece en tus gastos, queda en el viaje y como deuda. Cuando le pagás, ese pago sí aparece.</li>
         <li>Una comida o salida puede tener invitados temporales. Lo que pagás vos aparece en tus gastos; lo que pagan otros, solo en la salida. Al saldar: si pagás vos es un gasto, si te pagan es un ingreso.</li></ul></div>
@@ -2317,7 +2500,7 @@ function abrirHoja(re){
     ${esPrevio() ? (() => { const n = F.cuotas|0, ini = card ? F.mesResumen : mesDe(F.fecha), sk = Math.max(0, Math.min(n, difMes(inicio(), ini))), resta = n - sk;
       return `<p class="note" style="margin:0">Compra anterior a ${nombreMes(inicio()).toLowerCase()}, cuando empezaste a usar la app: ${resta > 0 ? `cuentan las ${resta === 1 ? 'última cuota' : `últimas ${resta} cuotas`} (de la ${sk + 1} a la ${n})${card ? `, que se pagan desde ${nombreMes(addMes(ini, sk + 1)).toLowerCase()}` : ''}. Las anteriores se dan por pagadas.` : 'todas las cuotas ya se pagaron antes, no suma nada.'}</p>`; })() : (F.tipo === 'gasto' && mesDe(F.fecha) < inicio() && !F.plRef ? `<p class="note" style="margin:0">Es anterior a ${nombreMes(inicio()).toLowerCase()}, cuando empezaste a usar la app. Si es una compra en cuotas con tarjeta (o la pagó otra persona en cuotas), poné las cuotas y solo cuentan las que faltan.</p>` : '')}
     <div class="two"><div class="field"><label for="f-fecha">Fecha</label><input class="inp" id="f-fecha" type="date" value="${F.fecha}"></div>
-      <div class="field"><span class="label">Estado</span>${seg('f', 'estado', [['pagado', F.tipo==='ingreso'?'Cobrado':'Hecho'], ['pend','Pendiente']], F.estado === 'omitido' ? 'pagado' : F.estado)}</div></div>
+      ${enViajeF() ? '<div></div>' : `<div class="field"><span class="label">Estado</span>${seg('f', 'estado', [['pagado', F.tipo==='ingreso'?'Cobrado':'Hecho'], ['pend','Pendiente']], F.estado === 'omitido' ? 'pagado' : F.estado)}</div>`}</div>
     <div class="field"><label for="f-nota">Nota</label><input class="inp" id="f-nota" autocomplete="off" value="${esc(F.nota)}" placeholder="Opcional"></div>
     ${F.estRef && !F.id ? `<p class="note" style="margin:0">Es un pago estimado con las compras del resumen anterior. Si no corresponde (por ejemplo, ya pagaste todo), podés quitarlo.</p>` : ''}
     <div class="actions">${F.id || F.plRef ? `<button type="button" class="btn danger" data-act="del">Borrar</button>` : ''}${F.estRef && !F.id ? `<button type="button" class="btn danger" data-act="estquitar" data-tj="${F.estRef.tid}" data-mon="${F.estRef.mon}">Quitar estimado</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>
@@ -2423,7 +2606,7 @@ async function enviarForm(){
     concepto: F.concepto.trim() || (F.tipo === 'pago' ? 'Pago ' + nomTj(F.tarjeta) : TIPOS[F.tipo]), monto, moneda:F.moneda,
     tasa: esPpal(F.moneda) ? 1 : ((prev || F.orig)?.moneda === F.moneda && (prev || F.orig).tasa ? (prev || F.orig).tasa : tasaDe(F.moneda)),
     cuenta: card ? null : F.cuenta, tarjeta: (card || F.tipo === 'pago') ? F.tarjeta : null, cuotas: card || (F.tipo === 'gasto' && pagoOtro(F)) ? F.cuotas : 1,
-    estado: F.estado === 'omitido' ? 'pagado' : F.estado, nota: F.nota.trim(), plantilla: F.plantilla || null, creado: prev?.creado || Date.now()};
+    estado: F.estado === 'omitido' || enViajeF() ? 'pagado' : F.estado, nota: F.nota.trim(), plantilla: F.plantilla || null, creado: prev?.creado || Date.now()};
   if (card) data.mesResumen = F.mesResumen;
   if (F.tipo === 'gasto' && F.evento && EV(F.evento)){ data.evento = F.evento; data.fase = F.fase || (hoy() < EV(F.evento).desde ? 'pre' : 'viaje');
     if (enViajeF() && !card && !pagoOtro(F)){ data.viatico = true; data.cuenta = null; } else if (prev && prev.viatico) data.viatico = null; }
@@ -2810,9 +2993,16 @@ const nomP = (e, id) => id === 'yo' ? miNombre() : ((e.participantes || []).find
 const gastosEv = id => S.movs.filter(m => m.evento === id && m.tipo === 'gasto' && m.estado !== 'omitido' && !m.liq && !m.carga);
 const cargasEv = id => S.movs.filter(m => m.evento === id && m.carga && m.estado !== 'omitido');
 const saldosEv = id => S.movs.filter(m => m.evento === id && m.liq && m.saldo && m.estado !== 'omitido');
+// Lo que puso cada uno en los viáticos (en moneda principal). Los viáticos son de todos: cada gasto pagado con ellos lo pagó cada uno en proporción a lo que puso.
+function aportesEv(e){
+  const a = {yo:0};
+  for (const m of cargasEv(e.id)){ const k = m.aportePor || 'yo'; a[k] = (a[k] || 0) + toBase(m); }
+  for (const m of saldosEv(e.id)) if (m.viatico) a.yo += m.tipo === 'ingreso' ? toBase(m) : -toBase(m); // pagos viejos que iban a los viáticos
+  return a;
+}
 // Tu parte de un gasto: en un viaje, según cómo lo dividiste (split); en una comida, según entre quiénes se repartió
 const parteMia = m => m.division ? (m.division.includes('yo') ? 1 / m.division.length : 0) : m.split ? (+(m.split.partes || {}).yo || 0) / 100 : 1;
-const quienPago = (m, e) => m.ajeno ? nomP(e, m.pagador) : pagoOtro(m) ? nomPer(m.split.pagador) : miNombre();
+const quienPago = (m, e) => m.viatico ? 'los viáticos' : m.ajeno ? nomP(e, m.pagador) : pagoOtro(m) ? nomPer(m.split.pagador) : miNombre();
 
 // ---------- Cuentas de un viaje ----------
 // Viáticos: la plata que pasaste al viaje (desde el día a día o el ahorro) más lo que te devolvieron a los viáticos, menos lo que pagaste con ellos.
@@ -2821,17 +3011,25 @@ function resumenViaje(e){
   const gs = gastosEv(e.id), r = {pre:0, viaje:0, total:0, mia:0, n:gs.length, tarjeta:0, viat:0, cargas:0, legado:0};
   for (const m of gs){ const v = enEv(m, e); r.total += v; r.mia += v * parteMia(m); if (m.fase === 'viaje') r.viaje += v; else r.pre += v;
     if (isCard(m) && !pagoOtro(m)) r.tarjeta += v; else if (m.viatico) r.viat += v; else if (m.fase === 'viaje' && !pagoOtro(m) && !m.ajeno) r.legado += v; }
-  for (const m of cargasEv(e.id)) r.cargas += enEv(m, e);
-  for (const m of saldosEv(e.id)) if (m.viatico) r.cargas += m.tipo === 'ingreso' ? enEv(m, e) : -enEv(m, e);
+  r.aportes = aportesEv(e);
+  r.cargas = Object.values(r.aportes).reduce((a, v) => a + v, 0) / (tasaDe(e.moneda) || 1);
   r.usado = r.viat + r.legado; // legado: gastos del viaje cargados antes con una cuenta
-  r.pres = r.cargas || +e.presupuesto || 0; r.queda = r.pres - r.usado;
+  r.pres = r.cargas; r.queda = r.pres - r.usado;
   return r;
 }
 // Lo que cada persona del viaje te debe (+) o le debés (−) por los gastos de este viaje, en moneda principal
 function deudasViaje(e){
   const gs = gastosEv(e.id), out = {};
-  const sal = saldosEv(e.id);
-  for (const p of (e.participantes || []).filter(p => p.id !== 'yo')) out[p.id] = gs.concat(sal).reduce((a, m) => a + (enViajeM(m) ? efectoPersona0(m, p.id, '9999-12') : 0), 0);
+  const sal = saldosEv(e.id), A = aportesEv(e), T = Object.values(A).reduce((a, v) => a + Math.max(0, v), 0);
+  for (const p of (e.participantes || []).filter(p => p.id !== 'yo')) out[p.id] = gs.concat(sal).reduce((a, m) => {
+    if (!enViajeM(m)) return a;
+    if (m.viatico && !m.liq){ // pagado con los viáticos: cada uno lo pagó según lo que puso
+      const v = toBase(m), pa = m.split ? (m.split.partes || {}) : {yo:100}, pg = m.split ? (m.split.pagador || 'yo') : 'yo';
+      const fr = x => T > 0 ? Math.max(0, A[x] || 0) / T : (pg === x ? 1 : 0);
+      return a + v * (+pa[p.id] || 0) / 100 * fr('yo') - v * (+pa.yo || 0) / 100 * fr(p.id);
+    }
+    return a + efectoPersona0(m, p.id, '9999-12');
+  }, 0);
   return out;
 }
 
@@ -2891,7 +3089,7 @@ function tarjetaViajes(){
       ${r.pres ? `<div class="wbar" role="img" aria-label="Viáticos: gastado ${fmtE(r.usado, e)} de ${fmtE(r.pres, e)}"><i style="width:${pct.toFixed(1)}%"></i></div><div class="rleyenda num"><span>gastado ${fmtE(r.usado, e)}</span><span>${r.cargas ? 'viáticos' : 'presupuesto'} ${fmtE(r.pres, e)}</span></div>` : ''}
       ${r.pres ? ritmoViaje(e, r, st) : ''}
       <p class="note num" style="margin:0">Total del viaje <strong style="color:var(--ink)">${fmtE(r.total, e)}</strong> · antes ${fmtE(r.pre, e)} · durante ${fmtE(r.viaje, e)}${r.tarjeta ? ` · con tarjeta ${fmtE(r.tarjeta, e)}` : ''}${largo2(e) ? ` · cargado en ${esc(nombreMes(S.mes).toLowerCase())} ${fmtE(delMes(e), e)}` : ''}</p>
-      <div class="chips">${st === 'archivado' ? '' : st === 'terminado' ? `<button class="btn" data-act="evcerrar" data-id="${e.id}">Archivar</button>` : `<button class="btn via" data-act="evadd" data-id="${e.id}">+ Gasto ${st === 'activo' ? 'del viaje' : 'previo'}</button>${!r.cargas ? `<button class="btn" data-act="evcarga" data-ev="${e.id}">+ Viáticos</button>` : ''}`}<button class="btn" data-act="evver" data-id="${e.id}">Ver viaje</button></div>
+      <div class="chips">${st === 'archivado' ? '' : st === 'terminado' ? `<button class="btn" data-act="evcerrar" data-id="${e.id}">Archivar</button>` : `<button class="btn via" data-act="evadd" data-id="${e.id}">+ Gasto ${st === 'activo' ? 'del viaje' : 'previo'}</button><button class="btn" data-act="evcarga" data-ev="${e.id}">+ Viáticos</button>`}<button class="btn" data-act="evver" data-id="${e.id}">Ver viaje</button></div>
     </section>`;
   }).join('');
 }
@@ -2954,12 +3152,13 @@ function vEvento(e){
   let cuerpo;
   if (viaje){
     const r = resumenViaje(e), deu = deudasViaje(e), cargas = cargasEv(e.id), sal = saldosEv(e.id);
-    const filaC = m => `<div class="row click" data-act="evcarga" data-id="${m.id}"><div class="t">${m.liq ? esc(m.concepto) : 'Viáticos'}</div><div class="m">${dia(m.fecha)} · ${m.liq ? (m.viatico ? 'en los viáticos' : esc(nomCta(m.cuenta))) : 'desde ' + esc(nomCta(m.cuenta))}</div><div class="a num ${m.tipo === 'ingreso' ? 'pos' : ''}">${m.liq && m.tipo === 'gasto' ? '− ' : m.liq ? '+ ' : ''}${fmtE(enEv(m, e), e)}</div></div>`;
+    const filaC = m => `<div class="row click" data-act="evcarga" data-id="${m.id}"><div class="t">${m.liq ? esc(m.concepto) : m.aportePor ? `Puso ${esc(nomPer(m.aportePor))}` : 'Pusiste vos'}</div><div class="m">${dia(m.fecha)} · ${m.liq ? (m.viatico ? 'en los viáticos' : esc(nomCta(m.cuenta))) : m.aportePor ? 'de sus cuentas' : 'desde ' + esc(nomCta(m.cuenta))}${m.estado === 'pend' ? ' · <span class="pill pend">Confirmá la cuenta</span>' : ''}</div><div class="a num ${m.tipo === 'ingreso' ? 'pos' : ''}">${m.liq && m.tipo === 'gasto' ? '− ' : m.liq ? '+ ' : ''}${fmtE(enEv(m, e), e)}</div></div>`;
     cuerpo = `<div class="grid4">${tile('Viáticos', r.pres ? fmtE(r.queda, e) : '—', r.cargas ? `quedan de ${fmtE(r.pres, e)}` : r.pres ? `presupuesto ${fmtE(r.pres, e)}, sin cargar` : 'todavía no cargaste', r.queda < 0)}${tile('Con tarjeta', fmtE(r.tarjeta, e), 'va al resumen de cada tarjeta')}${tile('Total del viaje', fmtE(r.total, e), `antes ${fmtE(r.pre, e)} · durante ${fmtE(r.viaje, e)}`)}${tile('Tu parte', fmtE(r.mia, e), parts.length > 1 ? 'de lo que se dividió' : 'todo es tuyo')}</div>
     <section class="panel"><h2>Viáticos <span class="num">${fmtE(r.cargas, e)}</span></h2>
       <div class="list">${cargas.length || sal.some(m => m.viatico) ? cargas.concat(sal.filter(m => m.viatico)).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')).map(filaC).join('') : '<p class="empty">La plata que pasás al viaje desde una cuenta del día a día o de ahorro. Los gastos que pagás con viáticos restan de acá y no del día a día.</p>'}</div>
       ${abierto ? `<div class="chips" style="margin-top:8px"><button class="btn" data-act="evcarga" data-ev="${e.id}">+ Cargar viáticos</button></div>` : ''}
-      ${r.pres ? `<p class="note num" style="margin:8px 0 0">Gastado con viáticos ${fmtE(r.usado, e)} · quedan ${fmtE(r.queda, e)}</p>` : ''}</section>
+      ${r.pres ? `<p class="note num" style="margin:8px 0 0">${Object.entries(r.aportes).filter(([, v]) => Math.abs(v) >= 0.5).map(([k, v]) => `${k === 'yo' ? 'Vos' : esc(nomPer(k))} ${fmt(v)}`).join(' · ')} · gastado ${fmtE(r.usado, e)} · quedan ${fmtE(r.queda, e)}${r.queda >= 0.5 && Object.keys(r.aportes).filter(k => r.aportes[k] > 0).length > 1 ? ` (${Object.entries(r.aportes).filter(([, v]) => v > 0).map(([k, v]) => `${k === 'yo' ? 'tuyos' : 'de ' + esc(nomPer(k))} ${fmtE(r.queda * v / (r.cargas * (tasaDe(e.moneda) || 1)), e)}`).join(', ')})` : ''}</p>
+      <p class="note" style="margin:4px 0 0">Cada gasto pagado con viáticos lo paga cada uno en proporción a lo que puso; la diferencia con lo que le tocaba queda en "Con quién".</p>` : ''}</section>
     ${lista('Durante el viaje', gs.filter(m => m.fase === 'viaje'), 'Lo que pagás con viáticos o con tarjeta durante el viaje.', `<button class="btn via" data-act="evaddfase" data-id="${e.id}" data-fase="viaje">+ Gasto del viaje</button>`)}
     ${lista('Antes del viaje', gs.filter(m => m.fase !== 'viaje'), 'Vuelos, reservas, seguro… Cuentan en tus meses como cualquier gasto.', `<button class="btn via" data-act="evaddfase" data-id="${e.id}" data-fase="pre">+ Gasto previo</button>`)}
     <section class="panel"><h2>Con quién</h2>
@@ -2979,6 +3178,9 @@ function vEvento(e){
     <section class="panel"><h2>Participantes <span>${parts.length}</span></h2>
       <div class="chips">${parts.map(p => `<span class="ptc">${esc(p.id === 'yo' ? miNombre() + ' (vos)' : p.nombre)}${p.invitado ? '<span class="tag">temporal</span>' : ''}${p.id === 'yo' || !abierto ? '' : `<button type="button" data-act="evpartdel" data-id="${e.id}" data-pid="${p.id}" aria-label="Quitar a ${esc(p.nombre)}">✕</button>`}</span>`).join('')}</div>
       ${abierto && libres.length ? `<div class="chips" style="margin-top:8px">${libres.map(x => `<button type="button" class="chip" data-act="evpartadd" data-id="${e.id}" data-c="${x.id}">+ ${esc(x.nombre)}</button>`).join('')}</div>` : ''}
+      ${e.grupo ? `<p class="note" style="margin:8px 0 0">Compartida por Google Drive con ${esc(Object.values(e.grupo.mapa || {}).filter(id => id !== 'yo').map(id => nomPer(id)).join(', '))}: cada uno carga lo suyo y se ve en todas las apps.</p>`
+        : personasVinculadas().some(x => evCompartible(e, x.id)) ? `<p class="note" style="margin:8px 0 0">Se comparte con ${esc(personasVinculadas().filter(x => evCompartible(e, x.id)).map(x => x.nombre).join(', '))} por el archivo que ya tienen.</p>`
+        : ofreceGrupo(e) && abierto ? `<div class="chips" style="margin-top:8px;align-items:center"><button class="btn" data-act="evgrupo" data-id="${e.id}">Compartir por correo</button><span class="note">Le llega a ${esc(conCorreo(e).map(p => nomPer(p.id)).join(' y '))} para que lo vean y carguen en su app.</span></div>` : ''}
       ${abierto ? `<div class="filters" style="margin-top:8px"><input class="inp" id="ev-inv" placeholder="Nombre de un invitado" autocomplete="off" style="flex:1;max-width:none"><button class="btn" data-act="evinv" data-id="${e.id}">Agregar invitado temporal</button></div>
       <p class="note" style="margin:6px 0 0">Un invitado temporal existe solo en esta salida; no se agrega a tus Personas.</p>` : ''}</section>
     <section class="panel"><h2>Quién le debe a quién</h2><div class="list">${balHtml}</div>
@@ -3064,8 +3266,7 @@ function abrirEvento(tipo, re, ed){
     <div class="two"><div class="field"><label for="v-desde">${viaje ? 'Sale el' : 'Fecha'}</label><input class="inp" id="v-desde" type="date" min="${inicio()}-01" value="${esc(V.desde)}"></div>
       <div class="field"><label for="v-hasta">${viaje ? 'Vuelve el' : 'Hasta (opcional)'}</label><input class="inp" id="v-hasta" type="date" min="${inicio()}-01" value="${esc(V.hasta)}"></div></div>
     <div class="field"><span class="label">Moneda</span>${conMovs ? `<span class="note">${esc(MON(V.moneda).nombre)}. No se puede cambiar porque ya tiene gastos.</span>` : chipsDe('w', 'moneda', S.cfg.monedas.map(m => [m.id, m.nombre]), V.moneda)}</div>
-    ${viaje ? `<div class="field"><label for="v-pres">Presupuesto de viáticos (${esc(monLbl(V.moneda))})</label><input class="inp" id="v-pres" inputmode="decimal" autocomplete="off" value="${esc(V.presTxt)}" placeholder="Opcional">
-      <span class="note">Lo que pensás gastar durante el viaje: comidas, transporte, salidas. No mueve plata; solo compara con lo que cargues con el botón del viaje.</span></div>` : ''}
+    ${viaje ? `<p class="note" style="margin:0">Los viáticos se cargan después, en el viaje: cada uno pone lo suyo desde una cuenta.</p>` : ''}
     ${V.edit ? '<p class="note" style="margin:0">Las personas se cambian en la pantalla del viaje o la salida.</p>' : `<div class="field"><span class="label">Con quién</span>
       ${PERS().length ? `<div class="chips">${PERS().map(x => `<button type="button" class="chip" data-w="part" data-v="${x.id}" aria-pressed="${V.parts.includes(x.id)}">${esc(x.nombre)}</button>`).join('')}</div>` : `<span class="note">No tenés Personas cargadas. ${viaje ? 'Para compartir un viaje, agregalas en Ajustes → Personas.' : ''}</span>`}
       ${!viaje ? `${V.invitados.length ? `<div class="chips">${V.invitados.map(g => `<span class="ptc">${esc(g.nombre)}<span class="tag">temporal</span><button type="button" data-w="invdel" data-v="${g.id}" aria-label="Quitar a ${esc(g.nombre)}">✕</button></span>`).join('')}</div>` : ''}
@@ -3082,11 +3283,10 @@ async function enviarEvento(){
   if (!V.desde){ toast('Elegí la fecha'); return; }
   const hasta = V.hasta || V.desde;
   if (hasta < V.desde){ toast(viaje ? 'La vuelta es antes de la salida' : 'La fecha de fin es anterior al inicio'); return; }
-  const pres = viaje && String(V.presTxt).trim() ? parseNum(V.presTxt) : 0;
-  if (!(pres >= 0)){ toast('Revisá el presupuesto'); return; }
+  const pres = 0;
   if (!S.db){ toast('Sin conexión con la base de datos'); return; }
   if (V.edit){
-    try { await S.db.collection('eventos').doc(V.id).update({nombre, desde:V.desde, hasta, moneda:V.moneda, presupuesto:pres}); } catch(err){ toast('No se pudo guardar'); return; }
+    try { await S.db.collection('eventos').doc(V.id).update({nombre, desde:V.desde, hasta, moneda:V.moneda}); } catch(err){ toast('No se pudo guardar'); return; }
     cerrar(); toast('Cambios guardados'); return;
   }
   if (!S.cfgExiste && !(await guardarCfg({}))) return;
@@ -3115,38 +3315,65 @@ let VC = null;
 function abrirViatico(e, m, extra, re){
   if (!e) return;
   if (!re){
-    if (m) VC = {id:m.id, ev:e.id, kind: m.liq ? 'liq' : 'carga', pid:m.saldo || null, dir: m.tipo === 'ingreso' ? 'recibi' : 'pague', montoTxt:dec(m.monto), moneda:m.moneda, dest: m.viatico ? 'v' : m.cuenta, fecha:m.fecha};
-    else if (extra && extra.pid){ const v = +extra.v || 0; VC = {id:null, ev:e.id, kind:'liq', pid:extra.pid, dir: v > 0 ? 'recibi' : 'pague', montoTxt: v ? dec(Math.round(Math.abs(v) / (tasaDe(e.moneda) || 1) * 100) / 100) : '', moneda:e.moneda, dest: estadoEv(e) === 'activo' && (v > 0 || resumenViaje(e).queda >= Math.abs(v) / (tasaDe(e.moneda) || 1)) ? 'v' : cuentaDefecto(), fecha:hoy()}; }
-    else { const c = (cuentasDia().find(c => c.monedas.includes(e.moneda)) || {}).id || cuentaDefecto(); VC = {id:null, ev:e.id, kind:'carga', montoTxt:'', moneda: monedasDe('c', c).includes(e.moneda) ? e.moneda : monedasDe('c', c)[0], dest:c, fecha: hoy() < e.desde ? hoy() : hoy() > (e.hasta || e.desde) ? (e.hasta || e.desde) : hoy()}; }
+    if (m) VC = {id:m.id, ev:e.id, kind: m.liq ? 'liq' : 'carga', pid:m.saldo || null, quien: m.aportePor || 'yo', dir: m.tipo === 'ingreso' ? 'recibi' : 'pague', montoTxt:dec(m.monto), moneda:m.moneda, dest: m.viatico ? 'v' : (m.cuenta || cuentaDefecto()), fecha:m.fecha};
+    else if (extra && extra.pid){ const v = +extra.v || 0, c = (cuentasDia().find(c => c.monedas.includes(e.moneda)) || {}).id || cuentaDefecto(); VC = {id:null, ev:e.id, kind:'liq', pid:extra.pid, dir: v > 0 ? 'recibi' : 'pague', montoTxt: v ? dec(Math.round(Math.abs(v) / (tasaDe(e.moneda) || 1) * 100) / 100) : '', moneda:e.moneda, dest:c, fecha:hoy()}; }
+    else { const c = (cuentasDia().find(c => c.monedas.includes(e.moneda)) || {}).id || cuentaDefecto(); VC = {id:null, ev:e.id, kind:'carga', quien:'yo', montoTxt:'', moneda: monedasDe('c', c).includes(e.moneda) ? e.moneda : monedasDe('c', c)[0], dest:c, fecha: hoy() < e.desde ? hoy() : hoy() > (e.hasta || e.desde) ? (e.hasta || e.desde) : hoy()}; }
   }
-  const liq = VC.kind === 'liq', nom = liq ? esc(nomPer(VC.pid)) : '';
-  const ms = VC.dest === 'v' ? S.cfg.monedas.map(x => x.id) : monedasDe('c', VC.dest);
+  const liq = VC.kind === 'liq', nom = liq ? esc(nomPer(VC.pid)) : '', mio = liq || VC.quien === 'yo';
+  const otros = (e.participantes || []).filter(p => p.id !== 'yo' && PER(p.id));
+  const ms = !mio || VC.dest === 'v' ? S.cfg.monedas.map(x => x.id) : monedasDe('c', VC.dest);
   if (!ms.includes(VC.moneda)) VC.moneda = ms.includes(e.moneda) ? e.moneda : ms.includes(monP().id) ? monP().id : ms[0];
-  const destinos = (liq ? [['v', 'Viáticos']] : []).concat(S.cfg.cuentas.map(c => [c.id, c.nombre]));
-  const titulo = !liq ? 'Cargar viáticos' : VC.dir === 'recibi' ? `${nom} te pagó` : `Le pagaste a ${nom}`;
+  const destinos = (VC.dest === 'v' ? [['v', 'Viáticos']] : []).concat(S.cfg.cuentas.map(c => [c.id, c.nombre]));
+  const titulo = !liq ? 'Viáticos' : VC.dir === 'recibi' ? `${nom} te pagó` : `Le pagaste a ${nom}`;
+  const r = resumenViaje(e);
+  let nota;
+  if (liq) nota = VC.dest === 'v' ? 'En los viáticos.' : VC.dir === 'recibi' ? 'Entra a esa cuenta como ingreso.' : 'Sale de esa cuenta.';
+  else if (!mio) nota = `Lo pone ${esc(nomPer(VC.quien))}: no sale de tus cuentas. Cuenta para repartir lo que se pague con los viáticos.`;
+  else nota = esDia(VC.dest) ? 'Sale de tu día a día este mes; lo que se pague con viáticos ya no resta del mes.' : 'Sale del ahorro: no baja lo que te queda a fin de mes.';
   $('#overlay').innerHTML = `<div class="scrim" data-act="close"><div class="sheet${re ? '' : ' anim'}" id="vcsheet" role="dialog" aria-modal="true" aria-label="${titulo}">
     <header><h3>${icoEv(e)}${titulo}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
-    ${liq ? seg('vc', 'dir', [['recibi', `${nomPer(VC.pid)} me pagó`], ['pague', `Le pagué a ${nomPer(VC.pid)}`]], VC.dir) : ''}
+    ${liq ? seg('vc', 'dir', [['recibi', `${nomPer(VC.pid)} me pagó`], ['pague', `Le pagué a ${nomPer(VC.pid)}`]], VC.dir) : otros.length ? `<div class="field"><span class="label">¿Quién pone?</span>${chipsDe('vc', 'quien', [['yo', 'Yo']].concat(otros.map(p => [p.id, nomPer(p.id)])), VC.quien)}</div>` : ''}
     <div class="amount"><button type="button" data-act="vcmon" aria-label="Cambiar moneda"${ms.length < 2 ? ' tabindex="-1"' : ''}>${esc(monLbl(VC.moneda))}</button><input id="vc-monto" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(VC.montoTxt)}" aria-label="Monto"></div>
-    <div class="field"><span class="label">${!liq ? 'Desde' : VC.dir === 'recibi' ? 'Entró en' : 'Salió de'}</span>${chipsDe('vc', 'dest', destinos, VC.dest)}</div>
-    <p class="note" style="margin:0">${!liq ? (esDia(VC.dest) ? 'Sale de tu día a día este mes; lo que gastes con viáticos ya no resta del mes.' : 'Sale del ahorro: no baja lo que te queda a fin de mes.') : VC.dest === 'v' ? (VC.dir === 'recibi' ? 'Suma a los viáticos del viaje.' : 'Sale de los viáticos del viaje.') : (VC.dir === 'recibi' ? 'Entra a esa cuenta como ingreso.' : 'Sale de esa cuenta como gasto.')}</p>
+    ${mio ? `<div class="field"><span class="label">${!liq ? 'Desde' : VC.dir === 'recibi' ? 'Entró en' : 'Salió de'}</span>${chipsDe('vc', 'dest', destinos, VC.dest)}</div>` : ''}
+    <p class="note" style="margin:0">${nota}</p>
+    ${VC.falta ? `<div style="padding:10px 12px;border-radius:10px;background:var(--viaje-soft);display:grid;gap:8px">
+      <span>En ${esc(nomCta(VC.dest))} tenés ${fmtEn(VC.falta.hay, VC.moneda)}: no alcanza para ${fmtEn(VC.falta.monto, VC.moneda)}.</span>
+      <div class="field"><label for="vc-tc">Comprar ${fmtEn(VC.falta.compra, VC.moneda)} a (${esc(monLbl(VC.falta.desde))} por cada ${esc(monLbl(VC.moneda))})</label><input class="inp" id="vc-tc" inputmode="decimal" value="${esc(VC.falta.tcTxt)}"></div>
+      <div class="chips"><button type="button" class="btn primary" data-act="vccambio">Comprar y cargar</button><button type="button" class="btn" data-act="vcenpesos">Cargar en ${esc(MON(VC.falta.desde).nombre.toLowerCase())}</button></div></div>` : ''}
     <div class="field"><label for="vc-fecha">Fecha</label><input class="inp" id="vc-fecha" type="date" value="${VC.fecha}"></div>
-    <div class="actions">${VC.id ? '<button type="button" class="btn danger" data-act="vcdel">Borrar</button>' : '<span></span>'}<button type="button" class="btn primary" data-act="vcok">Guardar</button></div></div></div>`;
+    ${!liq && r.cargas ? `<p class="note num" style="margin:0">En los viáticos hay ${fmtE(r.cargas, e)} cargados y quedan ${fmtE(r.queda, e)}.</p>` : ''}
+    <div class="actions">${VC.id ? '<button type="button" class="btn danger" data-act="vcdel">Borrar</button>' : '<span></span>'}${VC.falta ? '' : '<button type="button" class="btn primary" data-act="vcok">Guardar</button>'}</div></div></div>`;
   if (!re && !VC.montoTxt) setTimeout(() => $('#vc-monto')?.focus(), 60);
 }
-const leerVC = () => { if (!VC) return; VC.montoTxt = $('#vc-monto')?.value ?? VC.montoTxt; VC.fecha = $('#vc-fecha')?.value || VC.fecha; };
-async function guardarVC(){
+const leerVC = () => { if (!VC) return; VC.montoTxt = $('#vc-monto')?.value ?? VC.montoTxt; VC.fecha = $('#vc-fecha')?.value || VC.fecha; if (VC.falta) VC.falta.tcTxt = $('#vc-tc')?.value ?? VC.falta.tcTxt; };
+// Saldo de una cuenta en una moneda a una fecha, sin contar el movimiento que se está editando
+const saldoEn = (cta, mon, fecha, sin) => { const prev = sin && S.movs.find(m => m.id === sin); let v = ((saldos(fecha).por[cta] || {})[mon]) || 0; if (prev && prev.estado === 'pagado' && prev.fecha <= fecha) for (const x of efectos(prev)) if (x.c === cta && x.mon === mon) v -= x.v; return v; };
+async function guardarVC(modo){
   leerVC(); const e = EV(VC.ev); if (!e) return;
   const monto = parseNum(VC.montoTxt);
   if (!isFinite(monto) || monto <= 0){ toast('Escribí un monto mayor a cero'); $('#vc-monto')?.focus(); return; }
-  const prev = VC.id ? S.movs.find(m => m.id === VC.id) : null, liq = VC.kind === 'liq', recibo = liq && VC.dir === 'recibi', nom = liq ? nomPer(VC.pid) : '';
+  const liq = VC.kind === 'liq', mio = liq || VC.quien === 'yo', sale = mio && VC.dest !== 'v' && !(liq && VC.dir === 'recibi');
+  // Que no quede en negativo una moneda que la cuenta no tiene: se propone comprarla con la principal, o cargar en la principal
+  if (sale && !modo && !esPpal(VC.moneda)){
+    const hay = saldoEn(VC.dest, VC.moneda, VC.fecha || hoy(), VC.id), desde = monedasDe('c', VC.dest).find(x => esPpal(x)) || monP().id;
+    if (hay < monto - 0.005 && monedasDe('c', VC.dest).includes(desde)){ VC.falta = {hay: Math.max(0, hay), monto, compra: Math.round((monto - Math.max(0, hay)) * 100) / 100, desde, tcTxt: dec(tasaDe(VC.moneda) / (tasaDe(desde) || 1))}; abrirViatico(e, null, null, true); return; }
+  }
+  if (modo === 'enpesos'){ const d = VC.falta.desde; VC.montoTxt = dec(Math.round(convierte(monto, VC.moneda, d) * 100) / 100); VC.moneda = d; VC.falta = null; abrirViatico(e, null, null, true); return; }
+  let tasaCompra = null;
+  if (modo === 'cambio'){ // compra de la moneda que falta, en la misma cuenta
+    const tc = parseNum(VC.falta.tcTxt); if (!(tc > 0)){ toast('Escribí la cotización'); return; }
+    const f = VC.falta, pesos = Math.round(f.compra * tc * 100) / 100; tasaCompra = tc * (tasaDe(f.desde) || 1);
+    if (!(await guardar(null, {fecha:VC.fecha || hoy(), tipo:'mover', cat:'Transferencia', modo:'mover', concepto:`Cambio ${MON(f.desde).nombre.toLowerCase()} → ${MON(VC.moneda).nombre.toLowerCase()} · ${e.nombre}`, de:VC.dest, a:VC.dest, moneda:f.desde, monA:VC.moneda, monto:pesos, montoA:f.compra, tasa: esPpal(f.desde) ? 1 : tasaDe(f.desde), cuotas:1, estado:'pagado', nota:'', plantilla:null, creado:Date.now()}))) return;
+    VC.falta = null;
+  }
+  const prev = VC.id ? S.movs.find(m => m.id === VC.id) : null, recibo = liq && VC.dir === 'recibi', nom = liq ? nomPer(VC.pid) : '';
   const data = {fecha:VC.fecha || hoy(), tipo: recibo ? 'ingreso' : 'gasto', cat: recibo ? 'Ingreso' : catViajes(), monto, moneda:VC.moneda,
-    tasa: esPpal(VC.moneda) ? 1 : (prev && prev.moneda === VC.moneda && prev.tasa ? prev.tasa : tasaDe(VC.moneda)),
-    cuenta: VC.dest === 'v' ? null : VC.dest, tarjeta:null, cuotas:1, estado:'pagado', nota: prev?.nota || '', plantilla:null, creado: prev?.creado || Date.now(), evento:e.id};
+    tasa: esPpal(VC.moneda) ? 1 : tasaCompra || (prev && prev.moneda === VC.moneda && prev.tasa ? prev.tasa : tasaDe(VC.moneda)),
+    cuenta: !mio || VC.dest === 'v' ? null : VC.dest, tarjeta:null, cuotas:1, estado:'pagado', nota: prev?.nota || '', plantilla:null, creado: prev?.creado || Date.now(), evento:e.id};
   if (liq) Object.assign(data, {concepto: recibo ? `${nom} me pagó · ${e.nombre}` : `Le pagué a ${nom} · ${e.nombre}`, saldo:VC.pid, fase:'viaje', liq:true, viatico: VC.dest === 'v' ? true : null});
-  else Object.assign(data, {concepto:`Viáticos · ${e.nombre}`, carga:true});
+  else Object.assign(data, {concepto: mio ? `Viáticos · ${e.nombre}` : `Viáticos de ${nomPer(VC.quien)} · ${e.nombre}`, carga:true, aportePor: mio ? null : VC.quien});
   if (prev && prev.sh) data.sh = prev.sh;
-  if (await guardar(VC.id, data)){ cerrar(); toast(liq ? 'Pago registrado en el viaje' : 'Viáticos cargados'); }
+  if (await guardar(VC.id, data)){ cerrar(); toast(liq ? 'Pago registrado en el viaje' : mio ? 'Viáticos cargados' : `Viáticos de ${nomPer(VC.quien)} cargados`); }
 }
 async function guardarLiq(e, de, a, monto, cuenta){
   const l = {id:genId('l'), de, a, monto, fecha:hoy()};
@@ -3176,12 +3403,15 @@ async function accionEventos(a, t){
   if (a === 'evvolver' || a === 'navev'){ S.evSel = null; if (location.hash === '#eventos') render(); return true; }
   if (a === 'evmes'){ S.evMes = t.dataset.mk || null; render(); return true; }
   if (a === 'evadd' && e){ if (e.tipo === 'viaje') nuevoGastoViaje(e, estadoEv(e) === 'proximo' ? 'pre' : 'viaje'); else abrirEvGasto(e); return true; }
+  if (a === 'evgrupo' && e){ await crearGrupo(e, t); return true; }
   if (a === 'evaddfase' && e){ nuevoGastoViaje(e, t.dataset.fase); return true; }
   if (a === 'evcarga'){ if (t.dataset.ev) abrirViatico(EV(t.dataset.ev)); else { const m = S.movs.find(x => x.id === t.dataset.id); if (m) abrirViatico(EV(m.evento), m); } return true; }
   if (a === 'evsaldar'){ abrirViatico(EV(t.dataset.ev), null, {pid:t.dataset.pid, v:t.dataset.v}); return true; }
   if (a === 'vcok' && VC){ t.disabled = true; await guardarVC(); t.disabled = false; return true; }
+  if (a === 'vccambio' && VC){ t.disabled = true; await guardarVC('cambio'); t.disabled = false; return true; }
+  if (a === 'vcenpesos' && VC){ await guardarVC('enpesos'); return true; }
   if (a === 'vcdel' && VC){ if (!armar(t)) return true; if (await borrar(COL.movs, VC.id)){ cerrar(); toast('Borrado'); } return true; }
-  if (a === 'vcmon' && VC){ leerVC(); const e2 = EV(VC.ev), ms = VC.dest === 'v' ? S.cfg.monedas.map(x => x.id) : monedasDe('c', VC.dest); VC.moneda = ms[(ms.indexOf(VC.moneda) + 1) % ms.length]; abrirViatico(e2, null, null, true); return true; }
+  if (a === 'vcmon' && VC){ leerVC(); const e2 = EV(VC.ev), ms = VC.dest === 'v' || (VC.kind === 'carga' && VC.quien !== 'yo') ? S.cfg.monedas.map(x => x.id) : monedasDe('c', VC.dest); VC.moneda = ms[(ms.indexOf(VC.moneda) + 1) % ms.length]; VC.falta = null; abrirViatico(e2, null, null, true); return true; }
   if (a === 'evgasto'){ const m = S.movs.find(x => x.id === t.dataset.id); if (m) abrirEvGasto(EV(m.evento), m); return true; }
   if (a === 'evedit' && e){ abrirEvento(e.tipo, false, e); return true; }
   if (a === 'evmon' && E){ leerEv(); const ev = EV(E.ev), ms = E.pagador === 'yo' ? monedasDe(E.medio.slice(0, 1) === 't' ? 't' : 'c', E.medio.slice(2)) : [...new Set([ev.moneda, monP().id])]; E.moneda = ms[(ms.indexOf(E.moneda) + 1) % ms.length]; abrirEvGasto(ev, null, true); return true; }
@@ -3212,7 +3442,7 @@ async function accionEventos(a, t){
 // ---------- Eventos ----------
 const armar = t => { if (t.dataset.armed) return true; t.dataset.armed = '1'; t.textContent = '¿Borrar? Tocá de nuevo'; return false; };
 document.addEventListener('click', async ev => {
-  const t = ev.target.closest('[data-act],[data-f],[data-p],[data-m],[data-k],[data-t],[data-g],[data-h],[data-e],[data-w],[data-lq],[data-u],[data-vc]');
+  const t = ev.target.closest('[data-act],[data-f],[data-p],[data-m],[data-k],[data-t],[data-g],[data-h],[data-e],[data-w],[data-lq],[data-u],[data-vc],[data-ug]');
   if (!t) return;
   if (t.classList.contains('scrim') && ev.target !== t) return;
   if (t.dataset.e && E){
@@ -3225,7 +3455,7 @@ document.addEventListener('click', async ev => {
     else if (k === 'invdel') V.invitados = V.invitados.filter(g => g.id !== v);
     else V[k] = v;
     abrirEvento(null, true); return; }
-  if (t.dataset.vc && VC){ leerVC(); VC[t.dataset.vc] = t.dataset.v; abrirViatico(EV(VC.ev), null, null, true); return; }
+  if (t.dataset.vc && VC){ leerVC(); VC[t.dataset.vc] = t.dataset.v; VC.falta = null; abrirViatico(EV(VC.ev), null, null, true); return; }
   if (t.dataset.lq && LQ){ LQ.cuenta = t.dataset.v; abrirLiq(EV(LQ.ev), null, null, null, true); return; }
   if (t.dataset.f && F){
     leerForm();
@@ -3296,6 +3526,7 @@ document.addEventListener('click', async ev => {
   if (a === 'catborrar'){ await borrarCat(); return; }
   if (a === 'close'){ if (ev.target === t || t.tagName === 'BUTTON') cerrar(); return; }
   if (a === 'pernew'){ abrirPersona(null); return; }
+  if (t.dataset.ug && UN && !a){ UN.mapa[t.dataset.ug] = t.dataset.v; abrirUnirse(); return; }
   if (t.dataset.u && UN && !a){ UN[t.dataset.u] = t.dataset.v; abrirUnirse(); return; }
   if (a === 'perinvitar'){ await invitarPersona(PE.id, t); return; }
   if (a === 'perenlace'){ abrirEnlaceInvitacion(PE.id); return; }
@@ -3303,6 +3534,7 @@ document.addEventListener('click', async ev => {
   if (a === 'unirdrive'){ conectarDrive(); let n = 0; const iv = setInterval(() => { if (driveConectado() && tokenValido()){ clearInterval(iv); abrirUnirse(); } else if (++n > 90) clearInterval(iv); }, 1000); return; }
   if (a === 'unirelegir'){ await unirElegir(t); return; }
   if (a === 'unirpersona'){ await unirPersona(); return; }
+  if (a === 'unirgrupo'){ t.disabled = true; await unirGrupo(); return; }
   if (a === 'unirfin'){ await unirFin(); return; }
   if (a === 'unircancelar'){ const propia = UN && UN.paso === 'propia'; UN = null; lsDel(LS_UNIRSE); cerrar(); if (!propia) toast('Podés aceptar después abriendo de nuevo el enlace'); return; }
   if (a === 'peredit'){ const x = PER(t.dataset.id); if (x) abrirPersona(x); return; }
