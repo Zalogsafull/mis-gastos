@@ -1143,10 +1143,33 @@ const linkDe = pid => (PER(pid) || {}).link || null;
 const personasVinculadas = () => PERS().filter(x => x.link && x.link.f);
 const miEmail = () => lsGet(LSD.email) || '';
 // ¿Este movimiento va al archivo compartido con esa persona? Gastos divididos solo con ella y pagos entre ustedes.
-const vaAlCompartido = (m, pid) => m.estado !== 'omitido' && !m.plantilla && !m.evento && (m.saldo === pid || (m.tipo === 'gasto' && m.split && (m.split.con || []).length === 1 && m.split.con[0] === pid));
+// Recurrentes con esa persona (el apartamento que te paga, la vivienda que le pagás): se comparten la plantilla y lo que se marca cada mes
+const recCompartible = (p, pid) => !!p && (p.tipo === 'ingreso' || p.tipo === 'gasto') && p.persona === pid;
+const vaAlCompartido = (m, pid) => m.plantilla && m.cargo === pid ? recCompartible(S.plant.find(p => p.id === m.plantilla), pid)
+  : m.estado !== 'omitido' && !m.plantilla && !m.evento && (m.saldo === pid || (m.tipo === 'gasto' && m.split && (m.split.con || []).length === 1 && m.split.con[0] === pid));
+const recDocId = (p, L) => p.sh && p.sh.f === L.f ? p.sh.id : p.id;
+// Plantilla recurrente → registro neutro (quién le paga a quién, con las letras A y B)
+function aRec(p, L){
+  const K = L.yo, O = otraLetra(K), ing = p.tipo === 'ingreso';
+  return {nombre:p.nombre, monto:+p.monto || 0, moneda: p.shMon || p.moneda, cat: p.tipo === 'gasto' ? (p.shCat || p.cat) : undefined, de: ing ? O : K, a: ing ? K : O, activa: p.activa !== false, desde: p.desde || null};
+}
+// Lo que se comparte de verdad: monto, moneda, quién le paga a quién y si sigue activo. El nombre y la categoría son de cada uno.
+const recClave = d => canon({monto:+d.monto || 0, moneda:d.moneda, de:d.de, a:d.a, activa:d.activa !== false, desde:d.desde || null});
+function deRec(d, pid, L, prev){
+  prev = prev || {};
+  const ing = d.a === L.yo, monOk = S.cfg.monedas.some(x => x.id === d.moneda), catOk = !!(d.cat && CAT(d.cat));
+  const p = {nombre: prev.nombre || d.nombre, tipo: ing ? 'ingreso' : 'gasto', monto:+d.monto || 0, moneda: monOk ? d.moneda : monP().id, persona:pid, cuenta: prev.cuenta || cuentaDefecto(), activa: d.activa !== false, orden: prev.orden || 99};
+  if (d.desde) p.desde = d.desde;
+  if (!monOk) p.shMon = d.moneda;
+  if (!ing){ p.cat = prev.cat || (catOk ? d.cat : (CAT('Fijos') ? 'Fijos' : catDefecto())); if (!prev.cat && d.cat && !catOk) p.shCat = d.cat; }
+  return p;
+}
 // Movimiento de la app → registro neutro del archivo
 function aNeutro(m, pid, L){
   const K = L.yo, O = otraLetra(K);
+  if (m.plantilla && m.cargo === pid){ const p = S.plant.find(x => x.id === m.plantilla);
+    return {tipo:'cuota', rec: p ? recDocId(p, L) : m.plantilla, mes: mesDe(m.fecha), fecha:m.fecha, monto:+m.monto || 0, moneda: m.shMon || m.moneda, tasa:m.tasa || tasaDe(m.moneda),
+      forma: m.estado === 'omitido' ? 'omitido' : m.compensado ? 'descontado' : 'efectivo'}; }
   // Las notas quedan en cada app. En los pagos, el texto lo pone cada app desde su lado ("Lu me pagó" / "Le pagué a Gonza").
   const base = {fecha:m.fecha, concepto:m.concepto || '', monto:+m.monto || 0, moneda: m.shMon || m.moneda, tasa:m.tasa || tasaDe(m.moneda)};
   if (m.saldo === pid) return {...base, concepto:'', tipo:'pago', de: m.tipo === 'ingreso' ? O : K, a: m.tipo === 'ingreso' ? K : O};
@@ -1156,6 +1179,15 @@ function aNeutro(m, pid, L){
 // Registro neutro → movimiento de la app (para lo que cargó la otra persona)
 function deNeutro(d, pid, L, previo){
   const K = L.yo, nom = nomPer(pid), prev = previo || {};
+  if (d.tipo === 'cuota'){
+    const p = S.plant.find(x => recCompartible(x, pid) && recDocId(x, L) === d.rec); if (!p) return null;
+    const m = {tipo:p.tipo, cat: p.tipo === 'gasto' ? p.cat : 'Ingreso', concepto:p.nombre, monto:+d.monto || 0, moneda: S.cfg.monedas.some(x => x.id === d.moneda) ? d.moneda : monP().id, tasa:d.tasa || 1,
+      fecha:d.fecha, plantilla:p.id, cargo:pid, cuenta: prev.cuenta || p.cuenta || cuentaDefecto(), tarjeta:null, cuotas:1, nota: previo ? (prev.nota || '') : `Lo marcó ${nom}`, creado: prev.creado || Date.now()};
+    if (d.forma === 'omitido') m.estado = 'omitido';
+    else if (d.forma === 'descontado'){ m.estado = 'pagado'; m.compensado = true; }
+    else m.estado = prev.estado === 'pagado' && !prev.compensado ? 'pagado' : 'pend'; // lo pagó en efectivo: confirmás a qué cuenta entró o de cuál salió
+    return m;
+  }
   const monOk = S.cfg.monedas.some(x => x.id === d.moneda);
   const base = {fecha:d.fecha, concepto:d.concepto, monto:+d.monto || 0, moneda: monOk ? d.moneda : monP().id, tasa:d.tasa || 1, nota: previo ? (prev.nota || '') : `Lo cargó ${nom}`, cuotas:1, creado: prev.creado || Date.now()};
   if (!monOk) base.shMon = d.moneda; // moneda que no tenés: se muestra en la principal y se devuelve tal cual
@@ -1203,8 +1235,10 @@ async function invitarPersona(pid, btn){
   try {
     const yo = miEmail(), L = {f:null, yo:'A'};
     const docs = {}, meta = {}, t = Date.now();
+    const recs = {}, rmeta = {};
+    for (const p of S.plant) if (recCompartible(p, pid)){ recs[p.id] = {...aRec(p, L), autor:'A'}; rmeta[p.id] = {t}; }
     for (const m of S.movs) if (vaAlCompartido(m, pid)){ docs[m.id] = {...aNeutro(m, pid, L), autor:'A'}; meta[m.id] = {t}; }
-    const contenido = {app:SH.app, v:1, miembros:{A:{email:yo, nombre: miNombre()}, B:{email, nombre: x.nombre}}, docs, meta, actualizado:new Date().toISOString()};
+    const contenido = {app:SH.app, v:1, miembros:{A:{email:yo, nombre: miNombre()}, B:{email, nombre: x.nombre}}, recs, rmeta, docs, meta, actualizado:new Date().toISOString()};
     const b = 'mg' + Math.random().toString(36).slice(2), nombreArch = `mis-gastos-compartido-${miNombre()}-${x.nombre}.json`.replace(/[^\w.\-áéíóúñÁÉÍÓÚÑ]/g, '_');
     const body = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name:nombreArch, mimeType:'application/json', description:'Gastos compartidos de la app Mis gastos. No lo edites a mano.'})}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(contenido)}\r\n--${b}--`;
     const j = await (await gapi('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {method:'POST', headers:{'Content-Type':'multipart/related; boundary=' + b}, body})).json();
@@ -1252,7 +1286,8 @@ function abrirUnirse(){
       <div class="actions">${pie}<button type="button" class="btn primary" data-act="unirpersona">Seguir</button></div>`;
   } else if (UN.paso === 'duplicados'){
     cuerpo = `<p style="margin:0">Estos gastos parecen estar cargados en las dos apps. Marcá los que son el mismo: quedan unificados (uno solo).</p>
-      <div class="list">${UN.pares.map((p, i) => `<label class="check"><input type="checkbox" data-dup="${i}" ${p.ok ? 'checked' : ''}> <span><strong>${esc(p.d.concepto || 'Gasto')}</strong> · ${dia(p.d.fecha)} · ${fmtEn(p.d.monto, p.d.moneda)}<br><small class="note">En tu app: ${esc(p.m.concepto || '')} · ${dia(p.m.fecha)} · ${fmtM(p.m)}</small></span></label>`).join('')}</div>
+      <div class="list">${UN.pares.map((p, i) => p.rec ? `<label class="check"><input type="checkbox" data-dup="${i}" ${p.ok ? 'checked' : ''}> <span><strong>Recurrente: ${esc(p.d.nombre || '')}</strong> · ${fmtEn(p.d.monto, p.d.moneda)} por mes<br><small class="note">En tu app: ${esc(p.m.nombre || '')} · ${fmtEn(p.m.monto, p.m.moneda)}</small></span></label>`
+        : `<label class="check"><input type="checkbox" data-dup="${i}" ${p.ok ? 'checked' : ''}> <span><strong>${esc(p.d.concepto || 'Gasto')}</strong> · ${dia(p.d.fecha)} · ${fmtEn(p.d.monto, p.d.moneda)}<br><small class="note">En tu app: ${esc(p.m.concepto || '')} · ${dia(p.m.fecha)} · ${fmtM(p.m)}</small></span></label>`).join('')}</div>
       <div class="actions"><span></span><button type="button" class="btn primary" data-act="unirfin">Listo</button></div>`;
   }
   $('#overlay').innerHTML = `<div class="scrim"><div class="sheet anim" id="usheet" role="dialog" aria-modal="true" aria-label="Compartir gastos">
@@ -1282,8 +1317,14 @@ async function unirPersona(){
   UN.pid = pid;
   // Parejas posibles: lo que cargó la otra persona contra lo que ya tenés con ella (misma fecha ±2 días y mismo monto)
   const L = linkDe(pid), usados = new Set(), pares = [];
+  // Recurrentes iguales (mismo monto y mismo sentido: el que te paga ella con tu ingreso, el que le pagás con tu gasto)
+  for (const [id, d] of Object.entries(a.recs || {})){
+    if (d.autor === UN.yo || (a.rmeta || {})[id]?.del) continue;
+    const ing = d.a === UN.yo, p = S.plant.find(p => !usados.has(p.id) && !p.sh && p.tipo === (ing ? 'ingreso' : 'gasto') && (p.persona === pid || !p.persona) && Math.abs((+p.monto || 0) * tasaDe(p.moneda) - (+d.monto || 0) * tasaDe(d.moneda)) < 1);
+    if (p){ usados.add(p.id); pares.push({id, d, m:p, ok:true, rec:true}); }
+  }
   for (const [id, d] of Object.entries(a.docs || {})){
-    if (d.autor === UN.yo || (a.meta || {})[id]?.del) continue;
+    if (d.autor === UN.yo || (a.meta || {})[id]?.del || d.tipo === 'cuota') continue;
     const m = S.movs.find(m => !usados.has(m.id) && vaAlCompartido(m, pid) && !m.sh && Math.abs(toBase(m) - (+d.monto || 0) * (d.tasa || 1)) < 1 && Math.abs((new Date(m.fecha) - new Date(d.fecha)) / 864e5) <= 2 && (d.tipo === 'pago') === !!m.saldo);
     if (m){ usados.add(m.id); pares.push({id, d, m, ok:true}); }
   }
@@ -1293,11 +1334,43 @@ async function unirPersona(){
 async function unirFin(){
   const x = PER(UN.pid); if (!x) return;
   const alias = {...((x.link || {}).alias || {})};
-  for (const p of UN.pares || []){ const cb = $(`[data-dup="${UN.pares.indexOf(p)}"]`); if (cb ? cb.checked : p.ok) alias[p.m.id] = p.id; }
+  for (const p of UN.pares || []){ const cb = $(`[data-dup="${UN.pares.indexOf(p)}"]`); if (!(cb ? cb.checked : p.ok)) continue;
+    if (p.rec) await S.db.collection(COL.plant).doc(p.m.id).set({...Object.fromEntries(Object.entries(p.m).filter(([k]) => k !== 'id')), persona: x.id, sh:{f: x.link.f, id: p.id}}); // queda vinculado a la plantilla del archivo
+    else alias[p.m.id] = p.id; }
   await guardarCfg({personas: PERS().map(y => y.id === x.id ? {...y, link:{...y.link, alias}} : y)});
   lsDel(LS_UNIRSE); UN = null; cerrar();
   toast(`Vinculado con ${x.nombre}. Sincronizando…`);
   await sincronizarCompartidos(true);
+}
+// Recurrentes con la persona: misma lógica que los movimientos, en la parte "recs" del archivo
+async function sincronizarRecs(a, x){
+  const L = x.link, pid = x.id, K = L.yo, lm = (S.db.crudo()[META] || {})[COL.plant] || {};
+  let subir = false; const escribir = [], borrarL = [], vistos = new Set();
+  for (const p of S.plant){
+    const did = recDocId(p, L); if (!(recCompartible(p, pid) || (p.sh && p.sh.f === L.f))) continue;
+    vistos.add(did);
+    const tl = (lm[p.id] || {}).t || 0, td = (a.rmeta[did] || {}).t || 0;
+    if (!recCompartible(p, pid)){ if (a.recs[did] && tl > td){ delete a.recs[did]; a.rmeta[did] = {t: tl, del:true}; subir = true; } continue; }
+    const n = {...aRec(p, L), autor: (a.recs[did] || {}).autor || K};
+    if (!a.recs[did] && !(a.rmeta[did] || {}).del){ a.recs[did] = n; a.rmeta[did] = {t: tl || Date.now()}; subir = true; }
+    else if (a.recs[did] && tl > td && recClave(n) !== recClave(a.recs[did])){ a.recs[did] = {...a.recs[did], ...n, nombre: a.recs[did].nombre, cat: a.recs[did].cat, autor: a.recs[did].autor}; a.rmeta[did] = {t: tl}; subir = true; }
+  }
+  for (const [lid, mt] of Object.entries(lm)) if (mt.del){
+    const did = lid.startsWith('shp_') ? lid.slice(4) : lid;
+    if (a.recs[did] && !vistos.has(did) && mt.t > ((a.rmeta[did] || {}).t || 0)){ delete a.recs[did]; a.rmeta[did] = {t: mt.t, del:true}; subir = true; }
+  }
+  const porDoc = {}; for (const p of S.plant) porDoc[recDocId(p, L)] = p;
+  for (const [did, d] of Object.entries(a.recs)){
+    const p = porDoc[did], td = (a.rmeta[did] || {}).t || 0;
+    if (!p){ if (d.autor !== K) escribir.push(['shp_' + did, {...deRec(d, pid, L), sh:{f:L.f, id:did}}]); continue; }
+    const tl = (lm[p.id] || {}).t || 0;
+    if (td > tl && recClave(aRec(p, L)) !== recClave(d)){ const {id, ...prev} = p; escribir.push([p.id, {...prev, ...deRec(d, pid, L, prev), sh: p.sh}]); }
+  }
+  for (const [did, mt] of Object.entries(a.rmeta)) if (mt.del){ const p = porDoc[did]; if (p && mt.t > ((lm[p.id] || {}).t || 0)) borrarL.push(p.id); }
+  for (const [id, d] of escribir){ const limpio = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined)); await S.db.collection(COL.plant).doc(id).set(limpio); }
+  for (const id of borrarL) await S.db.collection(COL.plant).doc(id).delete();
+  if (escribir.length || borrarL.length) await new Promise(ok => setTimeout(ok, 30)); // que la lista de recurrentes se actualice antes de los movimientos
+  return subir;
 }
 // ----- Sincronizar cada archivo compartido (lo llama sincronizar(), después del archivo propio) -----
 let SHB = false;
@@ -1312,10 +1385,11 @@ async function sincronizarCon(x){
   const L = x.link, pid = x.id, K = L.yo;
   let a; try { a = await bajarArchivo(L.f); } catch(e){ if (e && e.status === 404){ toast(`El archivo compartido con ${x.nombre} ya no está disponible`); } throw e; }
   if (!a || a.app !== SH.app) return;
-  a.docs = a.docs || {}; a.meta = a.meta || {};
+  a.docs = a.docs || {}; a.meta = a.meta || {}; a.recs = a.recs || {}; a.rmeta = a.rmeta || {};
+  let subir = await sincronizarRecs(a, x);
   const crudo = S.db.crudo(), lm = (crudo[META] || {})[COL.movs] || {}, alias = L.alias || {};
   const docDe = m => alias[m.id] || (m.sh && m.sh.f === L.f ? m.sh.id : m.id);
-  let subir = false; const escribir = [], borrarL = [];
+  const escribir = [], borrarL = [];
   // 1) Lo mío → archivo (si cambió después que lo del archivo)
   const vistos = new Set();
   for (const m of S.movs){
@@ -1337,9 +1411,15 @@ async function sincronizarCon(x){
   const porDoc = {}; for (const m of S.movs) porDoc[docDe(m)] = m;
   for (const [did, d] of Object.entries(a.docs)){
     const m = porDoc[did], td = (a.meta[did] || {}).t || 0;
-    if (!m){ if (d.autor !== K) escribir.push(['sh_' + did, {...deNeutro(d, pid, L), sh:{f:L.f, id:did}}]); continue; }
+    if (!m){
+      if (d.autor === K) continue;
+      if (d.tipo === 'cuota'){ // si ya marcaste ese mes de ese recurrente, se vinculan en vez de duplicarse
+        const p = S.plant.find(x => recCompartible(x, pid) && recDocId(x, L) === d.rec), ya = p && S.movs.find(m => m.plantilla === p.id && mesDe(m.fecha) === d.mes && !m.sh && !alias[m.id]);
+        if (ya){ const {id, ...prev} = ya; escribir.push([ya.id, {...prev, sh:{f:L.f, id:did}}]); continue; }
+      }
+      const nuevo = deNeutro(d, pid, L); if (nuevo) escribir.push(['sh_' + did, {...nuevo, sh:{f:L.f, id:did}}]); continue; }
     const tl = (lm[m.id] || {}).t || 0;
-    if (td > tl && canon(aNeutro(m, pid, L)) !== canon({...d, autor:undefined})) { const {id, ...prev} = m; escribir.push([m.id, {...prev, ...deNeutro(d, pid, L, prev), sh: m.sh}]); }
+    if (td > tl && canon(aNeutro(m, pid, L)) !== canon({...d, autor:undefined})) { const {id, ...prev} = m, n = deNeutro(d, pid, L, prev); if (n) escribir.push([m.id, {...prev, ...n, sh: m.sh}]); }
   }
   for (const [did, mt] of Object.entries(a.meta)) if (mt.del){ const m = porDoc[did]; if (m && mt.t > ((lm[m.id] || {}).t || 0)) borrarL.push(m.id); }
   for (const [id, d] of escribir){ const limpio = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined)); await S.db.collection(COL.movs).doc(id).set(limpio); }
@@ -2530,7 +2610,7 @@ function abrirPersona(x){
     <header><h3>${PE.id ? 'Editar persona' : 'Nueva persona'}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
     <div class="field"><label for="e-nombre">Nombre</label><input class="inp" id="e-nombre" value="${esc(PE.nombre)}" placeholder="Lu, Juan, Casa…" autocomplete="off"></div>
     <div class="field"><label for="e-email">Correo de Google (para compartir gastos)</label><input class="inp" id="e-email" type="email" inputmode="email" value="${esc(PE.email || '')}" placeholder="nombre@gmail.com" autocomplete="off"></div>
-    ${PE.id ? (PE.link ? `<div class="compartir"><strong>Gastos compartidos con ${esc(PE.nombre)} ✓</strong><span class="note">Los gastos divididos y los pagos entre ustedes se sincronizan solos, junto con Google Drive.</span><div class="chips"><button type="button" class="btn" data-act="perenlace">Ver enlace de invitación</button><button type="button" class="btn ghost" data-act="perdesvincular">Dejar de compartir</button></div></div>`
+    ${PE.id ? (PE.link ? `<div class="compartir"><strong>Gastos compartidos con ${esc(PE.nombre)} ✓</strong><span class="note">Los gastos divididos, los pagos entre ustedes y los recurrentes con ${esc(PE.nombre)} se sincronizan solos, junto con Google Drive.</span><div class="chips"><button type="button" class="btn" data-act="perenlace">Ver enlace de invitación</button><button type="button" class="btn ghost" data-act="perdesvincular">Dejar de compartir</button></div></div>`
       : `<div class="compartir"><span class="note">Si ${esc(PE.nombre || 'esta persona')} también usa la app, invitala: crean un archivo compartido en Drive y los gastos que tienen juntos aparecen en las dos apps, sin cargarlos dos veces.</span><div class="chips"><button type="button" class="btn primary" data-act="perinvitar">Invitar a compartir gastos</button></div>${driveConectado() ? '' : '<span class="note">Necesitás tener Google Drive conectado (Ajustes → Tus datos).</span>'}</div>`) : ''}
     <div class="field"><label for="e-tel">Teléfono para WhatsApp (opcional)</label><input class="inp" id="e-tel" type="tel" inputmode="tel" value="${esc(PE.tel || '')}" placeholder="Con código de país, ej. 598 99 123 456" autocomplete="off"></div>
     ${PE.id ? `<p class="note" style="margin:0">${(() => { const b = balanceMes(PE.id); return Math.abs(b) < 1 ? 'Este mes están a mano.' : b > 0 ? `Este mes te debe ${fmt(b)}.` : `Este mes le debés ${fmt(-b)}.`; })()}</p>` : ''}
