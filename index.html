@@ -376,7 +376,7 @@ a.btn{text-decoration:none;display:inline-block}
 // Categorías de gasto: se editan en Ajustes. El id no cambia al renombrar (los movimientos guardan el id).
 const CATS_DEF = [{id:'Súper', nombre:'Súper', color:'--c-super', dia:true}, {id:'Alimentación', nombre:'Alimentación', color:'--c-ali', dia:true},
   {id:'Salud', nombre:'Salud', color:'--c-salud', dia:true}, {id:'Vestimenta', nombre:'Vestimenta', color:'--c-vest', dia:true},
-  {id:'Extras', nombre:'Extras', color:'--c-extras', dia:true}, {id:'Fijos', nombre:'Recurrentes', color:'--c-fijos', dia:false}];
+  {id:'Extras', nombre:'Extras', color:'--c-extras', dia:true}, {id:'Vivienda', nombre:'Vivienda', color:'--c-fijos', dia:false}, {id:'Servicios', nombre:'Servicios', color:'#0c8599', dia:false}];
 const PALETA = ['#2f9e44','#d9480f','#ae3ec9','#0c8599','#b08900','#8a5a44','#e8590c','#5c940d','#23907f','#c27a1d','#c2456b','#5b6fd6'];
 const CATS = () => S.cfg.cats && S.cfg.cats.length ? S.cfg.cats : CATS_DEF;
 const CAT = id => CATS().find(c => c.id === id);
@@ -390,6 +390,67 @@ const SUBS = () => S.cfg.subs || [];
 const SUB = id => SUBS().find(x => x.id === id);
 const colSub = x => { const c = x.color || '--c-fijos'; return c.startsWith('--') ? `var(${c})` : c; };
 const colSubRes = x => { const c = x.color || '--c-fijos'; return c.startsWith('--') ? getComputedStyle(document.documentElement).getPropertyValue(c).trim() : c; };
+// ¿Es un gasto recurrente? Viene de un gasto de todos los meses, se llama igual que uno, o era de la vieja categoría Recurrentes
+function idxRec(){ const tpl = {}; for (const p of S.plant) if (p.tipo === 'gasto') tpl[claveConcepto(p.nombre)] = p; return tpl; }
+function esRec(m, tpl){
+  if (!m || m.tipo !== 'gasto' || m.estado === 'omitido') return false;
+  if (m.rec) return true;
+  const p = m.plantilla ? S.plant.find(x => x.id === m.plantilla) : null;
+  if (p) return p.tipo === 'gasto';
+  return !!(tpl || idxRec())[claveConcepto(m.concepto)];
+}
+// Una sola vez: la categoría "Recurrentes" y sus subcategorías pasan a ser categorías comunes; lo recurrente queda marcado
+let MIGREC = false;
+// Un color que no se confunda con los de las otras categorías (en las gráficas van una al lado de la otra)
+function colorDistinto(col, cats){
+  const rgb = c => { const v = String(c || '').startsWith('--') ? getComputedStyle(document.documentElement).getPropertyValue(c).trim() : String(c || ''); const m = v.match(/^#([0-9a-f]{6})$/i); if (!m) return null; const n = parseInt(m[1], 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+  const dist = (a, b) => a && b ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : 999;
+  const usados = cats.map(c => rgb(c.color)), cerca = c => Math.min(...usados.map(u => dist(rgb(c), u)));
+  if (col && cerca(col) > 60) return col;
+  return PALETA.slice().sort((a, b) => cerca(b) - cerca(a))[0]; // el más distinto de los que ya hay
+}
+async function migrarRecurrentes(){
+  if (MIGREC || !S.cfg || S.cfg.migRec || !(S.cfg.cats || []).some(c => c.id === 'Fijos') && !(S.cfg.subs || []).length) return;
+  MIGREC = true;
+  try {
+    const sinT = t => String(t || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let cats = (S.cfg.cats && S.cfg.cats.length ? S.cfg.cats : CATS_DEF).map(c => ({...c}));
+    const deSub = {};
+    for (const x of S.cfg.subs || []){
+      const ya = cats.find(c => c.id !== 'Fijos' && sinT(c.nombre) === sinT(x.nombre));
+      if (ya) deSub[x.id] = ya.id;
+      else { let id = x.nombre.trim() || x.id; while (cats.some(c => c.id === id)) id += '·'; cats.push({id, nombre:x.nombre.trim(), color: colorDistinto(x.color, cats), dia:false}); deSub[x.id] = id; }
+    }
+    const fijos = cats.find(c => c.id === 'Fijos');
+    let resto = null; // los recurrentes sin subcategoría
+    const otros = () => { if (resto) return resto; const ya = cats.find(c => c.id !== 'Fijos' && sinT(c.nombre) === 'fijos varios'); if (ya) return resto = ya.id; cats.push({id:'Fijos varios', nombre:'Fijos varios', color: (fijos && fijos.color) || '--c-fijos', dia:false}); return resto = 'Fijos varios'; };
+    // concepto → categoría nueva (por los conceptos de cada subcategoría y por el nombre de cada gasto recurrente)
+    const idx = {}, tplCat = {};
+    for (const x of S.cfg.subs || []) for (const c of x.conceptos || []) idx[claveConcepto(c)] = deSub[x.id];
+    const plantNueva = {};
+    for (const p of S.plant) if (p.tipo === 'gasto'){
+      const cat = p.sub && deSub[p.sub] ? deSub[p.sub] : p.cat === 'Fijos' || !CAT(p.cat) && !cats.some(c => c.id === p.cat) ? otros() : p.cat;
+      plantNueva[p.id] = cat; tplCat[claveConcepto(p.nombre)] = cat; if (p.sub && deSub[p.sub]) idx[claveConcepto(p.nombre)] = deSub[p.sub];
+    }
+    const nuevaCat = (m) => { // devuelve [cat, rec] o null si no cambia
+      if (m.tipo !== 'gasto') return null;
+      const k = claveConcepto(m.concepto);
+      if (m.plantilla && plantNueva[m.plantilla]) return plantNueva[m.plantilla] !== m.cat ? [plantNueva[m.plantilla], false] : null;
+      if (m.cat === 'Fijos') return [idx[k] || tplCat[k] || otros(), true];
+      if (tplCat[k] && tplCat[k] !== m.cat && idx[k]) return [tplCat[k], false]; // se llama como un recurrente con subcategoría (Spotify en Extras → Suscripciones)
+      return null;
+    };
+    for (const p of S.plant) if (p.tipo === 'gasto' && (p.cat !== plantNueva[p.id] || p.sub)) await S.db.collection(COL.plant).doc(p.id).update({cat:plantNueva[p.id], sub:null});
+    for (const m of S.movs){ const n = nuevaCat(m); if (n) await S.db.collection(COL.movs).doc(m.id).update(n[1] ? {cat:n[0], rec:true} : {cat:n[0]}); }
+    for (const [mk, doc] of Object.entries(S.plan || {})){
+      let cambio = false; const items = (doc.items || []).map(it => { const n = nuevaCat(it); if (!n) return it; cambio = true; return n[1] ? {...it, cat:n[0], rec:true} : {...it, cat:n[0]}; });
+      if (cambio) await S.db.doc('planilla/' + mk).update({items});
+    }
+    cats = cats.filter(c => c.id !== 'Fijos');
+    await S.db.doc(COL.cfg).update({cats, subs:[], migRec:1});
+    toast('Las categorías de los recurrentes ahora son categorías comunes');
+  } catch(e){ console.error(e); MIGREC = false; }
+}
 function subIndice(){ // concepto normalizado → subcategoría
   const idx = {}, tpl = {};
   for (const x of SUBS()) for (const c of x.conceptos || []) idx[claveConcepto(c)] = x.id;
@@ -507,7 +568,7 @@ const MEDIO_DE = {tarjeta: Object.fromEntries(Object.entries(HIST.tarjeta).map((
 function planAMov(it, mk, i){
   const fecha = it.fecha && mesDe(it.fecha) === mk ? it.fecha : `${mk}-01`;
   const tasa = it.moneda === 'USD' ? (+it.tc || tasaDe('USD')) : it.moneda === 'UI' ? (+it.ui || S.plan[mk]?.ui || tasaDe('UI')) : 1;
-  const m = {id:`pl:${mk}:${i}`, pl:{mk, idx:i}, fecha, tipo:it.tipo, cat:it.cat, concepto:it.concepto, monto:+it.monto || 0, moneda:it.moneda, tasa, cuotas:1, estado:'pagado', nota:it.nota || '', total:it.total};
+  const m = {id:`pl:${mk}:${i}`, pl:{mk, idx:i}, fecha, tipo:it.tipo, cat:it.cat, concepto:it.concepto, monto:+it.monto || 0, moneda:it.moneda, tasa, cuotas:1, estado:'pagado', nota:it.nota || '', total:it.total, rec:it.rec || undefined};
   if (it.tipo === 'ahorro'){
     const c = HIST.ahorro[it.cuenta] || it.cuenta || 'brou';
     Object.assign(m, {tipo:'mover', cat:'Transferencia', de: it.dir === 'ret' ? c : 'itau', a: it.dir === 'ret' ? 'itau' : c, monA:it.moneda, montoA:m.monto, modo: it.dir === 'ret' ? 'ret' : 'dep'});
@@ -836,25 +897,29 @@ function cajaBase(mk){
 }
 const monCap = () => S.cfg.monedaCapital && S.cfg.monedas.some(m => m.id === S.cfg.monedaCapital) ? S.cfg.monedaCapital : monP().id;
 function serie(){
-  const out = []; let mk = primerMes(); const hasta = hoyMes(), mc = monCap();
+  const out = [], tplR = idxRec(); let mk = primerMes(); const hasta = hoyMes(), mc = monCap();
   while (mk <= hasta){
     const r = resumen(mk), c = r.cats;
     let capMc = null;
     if (mk < inicio()){ const h = S.hist[mk]; if (h && h.capital != null) capMc = mc === 'USD' ? h.capital : h.capital * (S.plan[mk]?.tc || tasaDe('USD')) / (tasaDe(mc) || 1); } // la planilla guardaba el capital en dólares
     else { const s = saldos(mk === hoyMes() ? hoy() : `${mk}-31`); let cap = 0; for (const [id, o] of Object.entries(s.por)) if (CTA(id) && !esDia(id)) for (const [mo, v] of Object.entries(o)) cap += v * tasaEnMes(mo, mk); capMc = cap / (tasaEnMes(mc, mk) || 1); }
-    const rec = {}, I = subIndice();
-    for (const x of itemsDelMes(mk)) if (x.m.estado !== 'pend'){ const sb = subDe(x.m, I); if (sb) rec[sb] = (rec[sb] || 0) + x.uyu; }
-    out.push({mk, cats:{...c}, rec, pagos:r.pagos, salida:r.salida, ahorro:r.ahorro, ing:r.ing, capMc});
+    // Gastos por categoría contando todo lo que salió ese mes: lo pagado con cuenta y las compras con tarjeta del resumen que se paga ese mes
+    const todo = {}, rec = {}, tar = {}; let tarPag = 0;
+    const suma = (o, k, v) => { o[k] = (o[k] || 0) + v; };
+    for (const x of itemsDelMes(mk)){ const m = x.m; if (m.tipo !== 'gasto' || m.estado === 'pend' || isCard(m) || (m.split && m.split.modo === 'prestado')) continue; suma(todo, m.cat, x.uyu); if (esRec(m, tplR)) suma(rec, m.cat, x.uyu); }
+    for (const x of itemsDelMes(addMes(mk, -1))){ const m = x.m; if (m.tipo !== 'gasto' || !isCard(m) || m.estado === 'omitido' || (m.split && m.split.modo === 'prestado')) continue; suma(todo, m.cat, x.uyu); suma(tar, m.cat, x.uyu); tarPag += x.uyu; if (esRec(m, tplR)) suma(rec, m.cat, x.uyu); }
+    const tarSin = Math.max(0, r.pagos - tarPag); // pagos de tarjeta sin compras cargadas (intereses, cargos o compras que no están en la app)
+    out.push({mk, cats:{...c}, todo, rec, tar, tarSin, pagos:r.pagos, salida:r.salida, ahorro:r.ahorro, ing:r.ing, capMc});
     mk = addMes(mk, 1);
   }
   return out;
 }
 const claveConcepto = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s*\*\s*\d+\s*$/,'').replace(/\s+\d+\s*\/\s*\d+\s*$/,'').replace(/\s+/g,' ').trim();
 function porConcepto(meses){
-  const acc = {};
+  const acc = {}, tplR = idxRec();
   for (const mk of meses) for (const x of itemsDelMes(mk)){
     const m = x.m;
-    if (m.tipo !== 'gasto' || m.cat === 'Fijos' || m.estado === 'pend') continue;
+    if (m.tipo !== 'gasto' || esRec(m, tplR) || m.estado === 'pend') continue;
     const k = claveConcepto(m.concepto); if (!k) continue;
     const a = acc[k] || (acc[k] = {total:0, n:0, nombres:{}, cat:m.cat});
     a.total += x.uyu; a.n++; a.nombres[m.concepto.trim()] = (a.nombres[m.concepto.trim()]||0) + 1;
@@ -1187,7 +1252,7 @@ function deRec(d, pid, L, prev){
   const p = {nombre: prev.nombre || d.nombre, tipo: ing ? 'ingreso' : 'gasto', monto:+d.monto || 0, moneda: monOk ? d.moneda : monP().id, persona:pid, cuenta: prev.cuenta || cuentaDefecto(), activa: d.activa !== false, orden: prev.orden || 99};
   if (d.desde) p.desde = d.desde;
   if (!monOk) p.shMon = d.moneda;
-  if (!ing){ p.cat = prev.cat || (catOk ? d.cat : (CAT('Fijos') ? 'Fijos' : catDefecto())); if (!prev.cat && d.cat && !catOk) p.shCat = d.cat; }
+  if (!ing){ p.cat = prev.cat || (catOk ? d.cat : ((CATS().find(c => !c.dia) || {}).id || catDefecto())); if (!prev.cat && d.cat && !catOk) p.shCat = d.cat; }
   return p;
 }
 // Movimiento de la app → registro neutro del archivo
@@ -1797,6 +1862,7 @@ function render(){
   if (S.view === 'ajustes') plegarAjustes();
   if (S.view === 'analisis') dibujarGraficas();
   mostrarElegidos($('#main'));
+  if (!S.cfg.migRec && !MIGREC && Object.values(S.ready).every(Boolean) && ((S.cfg.cats || []).some(c => c.id === 'Fijos') || (S.cfg.subs || []).length)) setTimeout(migrarRecurrentes, 50);
   if (lsGet(LS_UNIRSE) && !S.unirseVisto && S.modo === 'local' && Object.values(S.ready).every(Boolean) && !$('#overlay').innerHTML){ S.unirseVisto = true; setTimeout(abrirUnirse, 300); }
 }
 function banner(){
@@ -1931,6 +1997,7 @@ function pasaFiltro(m, f){
   if (f.startsWith('cat:')) return m.tipo === 'gasto' && !card && m.cat === f.slice(4);
   if (f === 'salidas') return m.tipo === 'gasto' || m.tipo === 'pago'; // también las compras con tarjeta (se listan en el mes en que se pagan; el neto no las suma dos veces)
   if (f === 'pend') return m.estado === 'pend';
+  if (f === 'rec') return esRec(m) || m.virtual === 'plant' && m.tipo === 'gasto';
   return m.tipo === f;
 }
 const FILTRO_LBL = f => f.startsWith('ev:') ? (EV(f.slice(3))?.nombre || 'Viaje') : f.startsWith('persona:') ? nomPer(f.slice(8)) : f.startsWith('cat:') ? nomCat(f.slice(4)) : f.startsWith('tarjeta:') ? nomTj(f.slice(8)) : f.startsWith('cuenta:') ? nomCta(f.slice(7)) : ({eventos:'Viajes y salidas', salidas:'Salidas', pend:'Pendientes', mover:'Transferencias'}[f] || f);
@@ -1949,7 +2016,7 @@ function pendientesComoFilas(mk){
     : {m:{...movDesdePlant(p.p, 'pend', mk), virtual:'plant', pid:p.p.id}, uyu:p.uyu, cuota:0, cuotas:1});
 }
 // ---------- Ritmo del gasto del día a día ----------
-const esVariable = m => m.tipo === 'gasto' && !m.ajeno && !isCard(m) && !pagoOtro(m) && !(m.split && m.split.modo === 'prestado') && catsVariables().includes(m.cat) && !m.plantilla && m.origen !== 'arrastre' && m.estado !== 'omitido';
+const esVariable = m => m.tipo === 'gasto' && !m.ajeno && !isCard(m) && !pagoOtro(m) && !(m.split && m.split.modo === 'prestado') && catsVariables().includes(m.cat) && !m.plantilla && !m.rec && m.origen !== 'arrastre' && m.estado !== 'omitido';
 // Barra de 4 tramos (semanas del mes) que se va pintando con los días que pasan.
 // Cada semana se mide sola: su parte de lo que queda del presupuesto. La semana en curso se pinta según lo que correspondía gastar hasta hoy.
 function barraSemanas(mk, saldoFin){
@@ -2055,7 +2122,7 @@ function vMovs(){
   return `
   <div class="top sticky">${monthNav()}</div>
   <div class="filtros">
-    <span class="note">Ver</span><div class="chips fila">${extraChip}${ch('todo','Todo')}${ch('ingreso','Ingresos')}${ch('salidas','Salidas')}${ch('mover','Transferencias')}${(S.evs || []).length ? ch('eventos','Viajes y salidas') : ''}${S.cfg.tarjetas.length ? ch('pago','Pagos tarjeta') : ''}</div>
+    <span class="note">Ver</span><div class="chips fila">${extraChip}${ch('todo','Todo')}${ch('ingreso','Ingresos')}${ch('salidas','Salidas')}${ch('mover','Transferencias')}${ch('rec','Recurrentes')}${(S.evs || []).length ? ch('eventos','Viajes y salidas') : ''}${S.cfg.tarjetas.length ? ch('pago','Pagos tarjeta') : ''}</div>
     <span class="note">Gastos</span><div class="chips fila">${ch('gasto','Todos los gastos')}${CATS().map(c => ch('cat:'+c.id, c.nombre)).join('')}</div>
     ${S.cfg.tarjetas.length ? `<span class="note">Tarjetas</span><div class="chips fila">${S.cfg.tarjetas.length > 1 ? ch('tarjeta','Todas') : ''}${S.cfg.tarjetas.map(t => ch('tarjeta:'+t.id, t.nombre)).join('')}</div>` : ''}
     <span class="note">Cuentas</span><div class="chips fila">${S.cfg.cuentas.map(c => ch('cuenta:'+c.id, c.nombre)).join('')}</div>
@@ -2103,14 +2170,22 @@ function vAnalisis(){
   const sum = k => sel.reduce((a,x) => a + (x[k]||0), 0);
   const ing = sum('ing'), sal = sum('salida'), aho = sum('ahorro');
   const tasa = ing ? aho/ing*100 : 0;
-  const porAnio = anios.map(y => { const xs = all.filter(x => x.mk.startsWith(y)); const s = k => xs.reduce((a,x)=>a+(x[k]||0),0); const i = s('ing'); return {y, n:xs.length, ing:i, cats:Object.fromEntries(CATS().map(c => [c.id, xs.reduce((a,x)=>a+(x.cats[c.id]||0),0)])), pagos:s('pagos'), aho:s('ahorro'), tasa: i ? s('ahorro')/i*100 : 0}; });
+  const porAnio = anios.map(y => { const xs = all.filter(x => x.mk.startsWith(y)); const s = k => xs.reduce((a,x)=>a+(x[k]||0),0); const i = s('ing'); return {y, n:xs.length, ing:i, cats:Object.fromEntries(CATS().map(c => [c.id, xs.reduce((a,x)=>a+(x.todo[c.id]||0),0)])), pagos:s('pagos'), tarSin:s('tarSin'), aho:s('ahorro'), tasa: i ? s('ahorro')/i*100 : 0}; });
   const n = sel.length || 1, pct = S.vistaAn === 'pct';
-  const subsUsadas = SUBS().concat([SIN_SUB]).filter(x => sel.some(m => m.rec[x.id]));
+  // Categorías que aparecen en el período (las de Ajustes y, por las dudas, alguna vieja que ya no esté)
+  const idsCat = [...new Set(CATS().map(c => c.id).concat(sel.flatMap(x => Object.keys(x.todo))))];
+  const usadas = k => idsCat.filter(id => sel.some(x => (x[k][id] || 0) > 0));
+  const tot = (k, id) => sel.reduce((a, x) => a + (x[k][id] || 0), 0);
+  const tarSin = sum('tarSin');
   // Promedio por mes y parte del ingreso, para leer el período de un vistazo
   const resumenBarras = filas => { const max = Math.max(1, ...filas.map(f => f.v)); return `<div class="bars">${filas.map(f => `<div class="bar"><span class="bn">${esc(f.nombre)}<small>${ing ? (f.v * n / ing * 100).toFixed(1) + ' % del ingreso' : ''}</small></span><span class="bt"><i style="width:${(f.v/max*100).toFixed(1)}%;background:${f.col}"></i></span><span class="bv num">${fmt(f.v)}<small style="display:block;font-weight:400;color:var(--muted);font-size:11px">por mes</small></span></div>`).join('')}</div>`; };
-  const filasCats = CATS().map(c => ({nombre:c.nombre, col:colCat(c.id), v: sel.reduce((a,x)=>a+(x.cats[c.id]||0),0) / n})).concat([{nombre:'Pago tarjetas', col:'var(--c-tarjeta)', v: sum('pagos') / n}]).filter(f => f.v > 0).sort((a,b) => b.v - a.v);
-  const filasRec = subsUsadas.map(x => ({nombre:x.nombre, col:colSub(x), v: sel.reduce((a,m)=>a+(m.rec[x.id]||0),0) / n})).sort((a,b) => b.v - a.v);
+  const filasCats = usadas('todo').map(id => ({nombre:nomCat(id), col:colCat(id), v: tot('todo', id) / n})).concat(tarSin >= 1 ? [{nombre:'Tarjeta sin detalle', col:'var(--c-tarjeta)', v: tarSin / n}] : []).filter(f => f.v > 0).sort((a,b) => b.v - a.v);
+  const filasRec = usadas('rec').map(id => ({nombre:nomCat(id), col:colCat(id), v: tot('rec', id) / n})).sort((a,b) => b.v - a.v);
   const totRec = filasRec.reduce((a,f) => a + f.v, 0);
+  const filasTar = usadas('tar').map(id => ({nombre:nomCat(id), col:colCat(id), v: tot('tar', id) / n})).sort((a,b) => b.v - a.v);
+  const totTar = filasTar.reduce((a,f) => a + f.v, 0);
+  // La tarjeta que estás usando ahora: compras de los resúmenes abiertos (se pagan el mes que viene)
+  const abiertas = (() => { const o = {}, porTj = {}; for (const x of itemsDelMes(hoyMes())){ const m = x.m; if (m.tipo !== 'gasto' || !isCard(m) || m.estado === 'omitido') continue; o[m.cat] = (o[m.cat] || 0) + x.uyu; porTj[m.tarjeta] = (porTj[m.tarjeta] || 0) + x.uyu; } return {cats:o, porTj, total:Object.values(o).reduce((a, v) => a + v, 0)}; })();
   const vch = (k,l) => `<button class="chip" data-act="vistaan" data-v="${k}" aria-pressed="${(S.vistaAn||'monto')===k}">${l}</button>`;
   const ch = (k,l) => `<button class="chip" data-act="anio" data-a="${k}" aria-pressed="${S.anio===k}">${l}</button>`;
   const mc = S.cfg.monedaCapital && S.cfg.monedas.some(m => m.id === S.cfg.monedaCapital) ? S.cfg.monedaCapital : monP().id;
@@ -2126,23 +2201,33 @@ function vAnalisis(){
   <div class="filters" style="align-items:center;flex-wrap:wrap"><span class="note">Ver las gráficas en</span><div class="chips">${vch('monto', sim + ' por mes')}${vch('pct','% del ingreso')}</div></div>
   <section class="panel"><h2>Salidas por mes frente a ingresos <span>${pct ? '% del ingreso' : sim}</span></h2>
     <div class="chartbox"><canvas id="ch1" aria-label="Barras apiladas de salidas por categoría y línea de ingresos"></canvas></div>
-    <div class="legend">${CATS().map(c => `<span><i style="background:${colCat(c.id)}"></i>${esc(c.nombre)}</span>`).join('')}<span><i style="background:var(--c-tarjeta)"></i>Pago tarjetas</span><span><i style="background:var(--c-ing);height:3px"></i>${pct ? 'Ingresos = 100 %' : 'Ingresos'}</span></div>
+    <div class="legend">${usadas('todo').map(id => `<span><i style="background:${colCat(id)}"></i>${esc(nomCat(id))}</span>`).join('')}${tarSin >= 1 ? '<span><i style="background:var(--c-tarjeta)"></i>Tarjeta sin detalle</span>' : ''}<span><i style="background:var(--c-ing);height:3px"></i>${pct ? 'Ingresos = 100 %' : 'Ingresos'}</span></div>
     <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${S.anio==='todos'?'todo el período':S.anio}</h3>
-    ${filasCats.length ? resumenBarras(filasCats) : '<p class="empty">Aparece cuando cargues tus primeros gastos.</p>'}</section>
+    ${filasCats.length ? resumenBarras(filasCats) : '<p class="empty">Aparece cuando cargues tus primeros gastos.</p>'}
+    <p class="note">Todos los gastos por categoría, también los de tarjeta: cada compra cuenta el mes en que pagás el resumen (y en cuotas, una por mes). ${tarSin >= 1 ? '"Tarjeta sin detalle" es lo que pagaste de tarjeta sin compras cargadas en la app, como intereses o cargos.' : ''}</p></section>
   <section class="panel"><h2>Gastos recurrentes frente a ingresos <span>${pct ? '% del ingreso' : sim}</span></h2>
-    <div class="chartbox"><canvas id="ch4" aria-label="Barras apiladas de gastos recurrentes por subcategoría y línea de ingresos"></canvas></div>
-    <div class="legend">${subsUsadas.map(x => `<span><i style="background:${colSub(x)}"></i>${esc(x.nombre)}</span>`).join('')}<span><i style="background:var(--c-ing);height:3px"></i>${pct ? 'Ingresos = 100 %' : 'Ingresos'}</span></div>
+    <div class="chartbox"><canvas id="ch4" aria-label="Barras apiladas de gastos recurrentes por categoría y línea de ingresos"></canvas></div>
+    <div class="legend">${usadas('rec').map(id => `<span><i style="background:${colCat(id)}"></i>${esc(nomCat(id))}</span>`).join('')}<span><i style="background:var(--c-ing);height:3px"></i>${pct ? 'Ingresos = 100 %' : 'Ingresos'}</span></div>
     <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${fmt(totRec)}${ing ? ` · ${(totRec * n / ing * 100).toFixed(1)} % del ingreso` : ''}</h3>
     ${filasRec.length ? resumenBarras(filasRec) : '<p class="empty">Aparece cuando tengas gastos recurrentes.</p>'}
-    <p class="note">Incluye lo que pagás con tarjeta (como las suscripciones), por eso no se suma con la gráfica de arriba. Las subcategorías se editan en Ajustes.</p></section>
+    <p class="note">Es una parte de la gráfica de arriba: los gastos de todos los meses (Ajustes → Gastos recurrentes), pagados con cuenta o con tarjeta.</p></section>
+  <section class="panel"><h2>Pagos con tarjeta <span>${pct ? '% del ingreso' : sim}</span></h2>
+    <div class="chartbox"><canvas id="ch5" aria-label="Barras apiladas de compras con tarjeta por categoría, en el mes en que se pagan"></canvas></div>
+    <div class="legend">${usadas('tar').map(id => `<span><i style="background:${colCat(id)}"></i>${esc(nomCat(id))}</span>`).join('')}${tarSin >= 1 ? '<span><i style="background:var(--c-tarjeta)"></i>Sin detalle</span>' : ''}<span><i style="background:var(--c-ing);height:3px"></i>${pct ? 'Ingresos = 100 %' : 'Ingresos'}</span></div>
+    <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${fmt(totTar)}${ing ? ` · ${(totTar * n / ing * 100).toFixed(1)} % del ingreso` : ''}</h3>
+    ${filasTar.length ? resumenBarras(filasTar) : '<p class="empty">Aparece cuando pagues compras con tarjeta.</p>'}
+    ${abiertas.total >= 1 ? `<h3 class="label" style="margin:16px 0 6px">Lo que venís cargando a la tarjeta · se paga el mes que viene · ${fmt(abiertas.total)}</h3>
+      <div class="bars">${Object.entries(abiertas.cats).sort((a, b) => b[1] - a[1]).map(([id, v]) => `<div class="bar"><span class="bn">${esc(nomCat(id))}</span><span class="bt"><i style="width:${(v / Math.max(...Object.values(abiertas.cats)) * 100).toFixed(1)}%;background:${colCat(id)}"></i></span><span class="bv num">${fmt(v)}</span></div>`).join('')}</div>
+      <p class="note num">${Object.entries(abiertas.porTj).map(([t, v]) => `${esc(nomTj(t))} ${fmt(v)}`).join(' · ')}</p>` : ''}
+    <p class="note">Cada compra cuenta el mes en que pagás el resumen, en cuotas si corresponde.</p></section>
   <div class="cols">
     <section class="panel"><h2>Ahorro mensual <span>${sim}</span></h2><div class="chartbox"><canvas id="ch2" aria-label="Ahorro por mes"></canvas></div></section>
     <section class="panel"><h2>Capital <span>${esc(monLbl(mc))}</span></h2><div class="chartbox"><canvas id="ch3" aria-label="Capital por mes"></canvas></div>
       <p class="note">Suma de tus cuentas de ahorro al cierre de cada mes.</p></section>
   </div>
-  <section class="panel"><h2>Por año <span>${sim}</span></h2><div class="tablewrap"><table><thead><tr><th>Año</th><th class="r">Meses</th><th class="r">Ingresos</th>${CATS().map(c => `<th class="r">${esc(c.nombre)}</th>`).join('')}<th class="r">Pago tarjetas</th><th class="r">Ahorro</th><th class="r">Tasa</th></tr></thead>
-    <tbody>${porAnio.map(a => `<tr class="ro"><td>${a.y}</td><td class="r num">${a.n}</td><td class="r num">${fmt(a.ing)}</td>${CATS().map(c => `<td class="r num">${fmt(a.cats[c.id])}</td>`).join('')}<td class="r num">${fmt(a.pagos)}</td><td class="r num">${fmt(a.aho)}</td><td class="r num">${a.tasa.toFixed(1)} %</td></tr>`).join('')}</tbody></table></div>
-    <p class="note">Las compras con tarjeta no se suman aparte para no contarlas dos veces: entran cuando pagás la tarjeta.</p></section>`;
+  <section class="panel"><h2>Por año <span>${sim}</span></h2><div class="tablewrap"><table><thead><tr><th>Año</th><th class="r">Meses</th><th class="r">Ingresos</th>${CATS().map(c => `<th class="r">${esc(c.nombre)}</th>`).join('')}<th class="r">Tarjeta sin detalle</th><th class="r">Ahorro</th><th class="r">Tasa</th></tr></thead>
+    <tbody>${porAnio.map(a => `<tr class="ro"><td>${a.y}</td><td class="r num">${a.n}</td><td class="r num">${fmt(a.ing)}</td>${CATS().map(c => `<td class="r num">${fmt(a.cats[c.id])}</td>`).join('')}<td class="r num">${fmt(a.tarSin)}</td><td class="r num">${fmt(a.aho)}</td><td class="r num">${a.tasa.toFixed(1)} %</td></tr>`).join('')}</tbody></table></div>
+    <p class="note">Las compras con tarjeta van en su categoría, el mes en que pagás el resumen.</p></section>`;
 }
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 function dibujarGraficas(){
@@ -2162,15 +2247,20 @@ function dibujarGraficas(){
   const c1 = $('#ch1'), c2 = $('#ch2'), c3 = $('#ch3');
   const pctA = S.vistaAn === 'pct', PA = (v, x) => pctA ? (x.ing ? v / x.ing * 100 : null) : v;
   const o1 = base(false, true); if (pctA){ o1.scales.y.ticks.callback = v => v + ' %'; o1.plugins.tooltip.callbacks.label = c => `${c.dataset.label}: ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(1) + ' %'}`; }
-  if (c1) charts.push(new Chart(c1, {data:{labels, datasets: CATS().map(c => ({type:'bar', label:c.nombre, data:sel.map(x=>PA(x.cats[c.id]||0, x)), backgroundColor:colCatRes(c.id), stack:'s', borderRadius:2}))
-    .concat([{type:'bar', label:'Pago tarjetas', data:sel.map(x=>PA(x.pagos, x)), backgroundColor:css('--c-tarjeta'), stack:'s', borderRadius:2},
+  const idsCat = [...new Set(CATS().map(c => c.id).concat(sel.flatMap(x => Object.keys(x.todo))))], usadas = k => idsCat.filter(id => sel.some(x => (x[k][id] || 0) > 0));
+  const conSin = sel.some(x => x.tarSin >= 1);
+  if (c1) charts.push(new Chart(c1, {data:{labels, datasets: usadas('todo').map(id => ({type:'bar', label:nomCat(id), data:sel.map(x=>PA(x.todo[id]||0, x)), backgroundColor:colCatRes(id), stack:'s', borderRadius:2}))
+    .concat(conSin ? [{type:'bar', label:'Tarjeta sin detalle', data:sel.map(x=>PA(x.tarSin, x)), backgroundColor:css('--c-tarjeta'), stack:'s', borderRadius:2}] : []).concat([
       {type:'line', label: pctA ? 'Ingresos (100 %)' : 'Ingresos', data:sel.map(x => pctA ? (x.ing ? 100 : null) : x.ing), borderColor:css('--c-ing'), borderWidth:2, pointRadius: sel.length < 3 ? 3 : 0, tension:.25, stack:'i'}])}, options: o1}));
   // Vista en % del ingreso: cada barra se divide por el ingreso de su mes
   const pct = S.vistaAn === 'pct', P_ = (v, x) => pct ? (x.ing ? v / x.ing * 100 : null) : v;
   const optsIng = () => { const o = base(false, true); if (pct){ o.scales.y.ticks.callback = v => v + ' %'; o.plugins.tooltip.callbacks.label = c => `${c.dataset.label}: ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(1) + ' %'}`; } return o; };
   const lineaIng = () => ({type:'line', label: pct ? 'Ingresos (100 %)' : 'Ingresos', data:sel.map(x => pct ? (x.ing ? 100 : null) : x.ing), borderColor:css('--c-ing'), borderWidth:2, pointRadius: sel.length < 3 ? 3 : 0, tension:.25, stack:'i'});
   const c4 = $('#ch4');
-  if (c4) charts.push(new Chart(c4, {data:{labels, datasets: SUBS().concat([SIN_SUB]).filter(s => sel.some(x => x.rec[s.id])).map(s => ({type:'bar', label:s.nombre, data:sel.map(x => P_(x.rec[s.id]||0, x)), backgroundColor:colSubRes(s), stack:'s', borderRadius:2})).concat([lineaIng()])}, options: optsIng()}));
+  if (c4) charts.push(new Chart(c4, {data:{labels, datasets: usadas('rec').map(id => ({type:'bar', label:nomCat(id), data:sel.map(x => P_(x.rec[id]||0, x)), backgroundColor:colCatRes(id), stack:'s', borderRadius:2})).concat([lineaIng()])}, options: optsIng()}));
+  const c5 = $('#ch5');
+  if (c5) charts.push(new Chart(c5, {data:{labels, datasets: usadas('tar').map(id => ({type:'bar', label:nomCat(id), data:sel.map(x => P_(x.tar[id]||0, x)), backgroundColor:colCatRes(id), stack:'s', borderRadius:2}))
+    .concat(conSin ? [{type:'bar', label:'Sin detalle', data:sel.map(x => P_(x.tarSin, x)), backgroundColor:css('--c-tarjeta'), stack:'s', borderRadius:2}] : []).concat([lineaIng()])}, options: optsIng()}));
   if (c2) charts.push(new Chart(c2, {type:'bar', data:{labels, datasets:[{label:'Ahorro', data:sel.map(x=>x.ahorro), backgroundColor:css('--c-ahorro'), borderRadius:3}]}, options: base(false, false)}));
   if (c3) charts.push(new Chart(c3, {type:'line', data:{labels, datasets:[{label:'Capital', data:sel.map(x=>x.capMc), borderColor:css('--accent'), backgroundColor:css('--accent-soft'), fill:true, borderWidth:2, pointRadius: sel.length < 3 ? 3 : 0, pointHoverRadius:4, tension:.25}]}, options: base(true, false)}));
 }
@@ -2197,7 +2287,7 @@ function abrirCat(c, re){
     <div class="field"><span class="label">Color</span><div style="display:flex;flex-wrap:wrap;gap:8px">${colores.map(sw).join('')}</div></div>
     <label class="check"><input type="checkbox" id="k-dia" ${K.dia ? 'checked' : ''}> Cuenta en el presupuesto del día a día</label>
     ${!K.nuevo ? `<p class="note" style="margin:0">${n ? `Tiene ${n} ${n === 1 ? 'gasto' : 'gastos'}. Si le cambiás el nombre, se actualiza en todos.` : 'Todavía no tiene gastos.'}</p>` : ''}
-    <div class="actions">${!K.nuevo && K.id !== 'Fijos' && CATS().length > 1 ? `<button type="button" class="btn danger" data-act="catpreborrar">Borrar</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>`}
+    <div class="actions">${!K.nuevo && CATS().length > 1 ? `<button type="button" class="btn danger" data-act="catpreborrar">Borrar</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>`}
   </form></div>`;
   if (!re && !K.borrar) setTimeout(() => $('#k-nombre')?.focus(), 60);
 }
@@ -2313,10 +2403,7 @@ function vAjustes(){
       <p class="note">Cuando registrás ${ings.length === 1 ? esc(ings[0].nombre) : 'uno de estos ingresos'} por lo que cobrás en mano, la app le suma estos descuentos y los marca como pagados en el mes. Para agregar otro, abrí un gasto de todos los meses y marcá "¿Te lo descuentan de un ingreso?".</p></section>`; })()}
   <section class="panel"><h2>Categorías de gastos <span><button class="btn" data-act="catnew">Agregar</button></span></h2>
     <div class="list">${CATS().map(k => { const n = usosCat(k.id); return `<div class="row click" role="button" tabindex="0" data-act="catedit" data-id="${esc(k.id)}"><div class="t"><i class="dot" style="background:${colCat(k.id)};display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:middle"></i>${esc(k.nombre)}${k.dia ? '<span class="tag">Día a día</span>' : ''}</div><div class="m">${n ? `${n} ${n === 1 ? 'gasto' : 'gastos'}` : 'Sin gastos'}</div><div class="a"><span class="ir" aria-hidden="true">›</span></div></div>`; }).join('')}</div>
-    <p class="note">Tocá una para cambiarle el nombre o el color, o para borrarla. Las marcadas <em>Día a día</em> cuentan en el presupuesto del día a día.</p></section>
-  <section class="panel"><h2>Subcategorías de recurrentes <span><button class="btn" data-act="subnew">Agregar</button></span></h2>
-    <div class="list">${SUBS().length ? SUBS().map(x => { const n = S.plant.filter(p => p.tipo === 'gasto' && p.sub === x.id).length; return `<div class="row click" role="button" tabindex="0" data-act="subedit" data-id="${esc(x.id)}"><div class="t"><i class="dot" style="background:${colSub(x)};display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:middle"></i>${esc(x.nombre)}</div><div class="m">${n ? `${n} ${n === 1 ? 'recurrente' : 'recurrentes'}` : 'Sin recurrentes'}</div><div class="a"><span class="ir" aria-hidden="true">›</span></div></div>`; }).join('') : '<p class="empty">Todavía no hay subcategorías.</p>'}</div>
-    <p class="note">Agrupan tus gastos recurrentes en la gráfica de Análisis. A cada gasto recurrente le elegís su subcategoría en la lista de arriba.</p></section>
+    <p class="note">Tocá una para cambiarle el nombre o el color, o para borrarla. Las marcadas <em>Día a día</em> cuentan en el presupuesto del día a día (sin contar los gastos recurrentes). Los gastos de todos los meses también usan estas categorías.</p></section>
   <section class="panel"><h2>Presupuesto del día a día</h2>
     <div class="filters"><div class="field" style="flex:1;min-width:0"><label for="c-pres">Súper, comida, salud, ropa y extras por mes (${esc(monLbl(monP().id))})</label><input class="inp" id="c-pres" inputmode="decimal" value="${dec(c.presupuesto || 0)}"></div><button class="btn primary" data-act="pres" style="align-self:flex-end">Guardar</button></div>
     <p class="note">Es lo que calculás gastar en lo que no está cargado como recurrente. Se ve como una barra de cuatro semanas debajo de lo que te queda en el mes: cada semana tiene su parte fija del presupuesto y se mide sola. La semana en curso arranca en verde y se pinta día a día; pasa a rojo si lo gastado supera el presupuesto de la semana. Al terminar queda verde o roja según cómo cerró. Si corregís un gasto, el color se corrige. Las compras con tarjeta de crédito no cuentan acá. Con 0 se oculta la barra.</p></section>
@@ -2789,7 +2876,7 @@ let P = null;
 function abrirPlant(p, re){
   if (!re){
     if (!S.cfg.cuentas.length){ toast('Primero agregá una cuenta'); return; }
-    P = p ? {...p} : {id:null, nombre:'', tipo:'gasto', cat:'Fijos', cuenta:cuentaDefecto(), tarjeta:null, de:cuentaDefecto(), a:(S.cfg.cuentas.find(c => c.tipo === 'ahorro') || {}).id || null, monto:'', moneda:monP().id, activa:true, orden: S.plant.length + 1};
+    P = p ? {...p} : {id:null, nombre:'', tipo:'gasto', cat:(CATS().find(c => !c.dia) || {}).id || catDefecto(), cuenta:cuentaDefecto(), tarjeta:null, de:cuentaDefecto(), a:(S.cfg.cuentas.find(c => c.tipo === 'ahorro') || {}).id || null, monto:'', moneda:monP().id, activa:true, orden: S.plant.length + 1};
     P.montoTxt = P.monto !== '' && P.monto != null ? dec(P.monto) : '';
     if (p && p.esBHU && !p.descuentaDe){ P.descuentaDe = descuentaDe(p) || ''; const v = valorDesc(p); P.monto = v.monto; P.moneda = v.moneda; P.montoTxt = dec(v.monto); }
   }
@@ -2804,7 +2891,6 @@ function abrirPlant(p, re){
     <div class="field"><label for="p-nombre">Nombre</label><input class="inp" id="p-nombre" value="${esc(P.nombre)}" placeholder="Alquiler, luz, internet, sueldo…"></div>
     ${seg('p', 'tipo', [['gasto','Gasto'],['ingreso','Ingreso'],['mover','Ahorro / transferencia']], P.tipo)}
     ${P.tipo==='gasto' ? `<div class="field"><span class="label">Categoría</span>${chipsFila('p', 'cat', porUso(CATS().map(c => [c.id, c.nombre]), usoCat()), P.cat)}</div>
-    <div class="field"><span class="label">Subcategoría de recurrentes</span>${chipsDe('p', 'sub', SUBS().map(x => [x.id, x.nombre]).concat([['', 'Ninguna']]), P.sub || '')}</div>
       <div class="field"><span class="label">Se paga con</span><div class="medios"><span class="note">Cuenta</span>${chipsDe('p', 'medio', ctas.map(([id,n]) => ['c:'+id, n]), P.tarjeta ? '' : 'c:'+P.cuenta)}${tjs.length ? `<span class="note">Crédito</span>${chipsDe('p', 'medio', tjs.map(([id,n]) => ['t:'+id, n]), P.tarjeta ? 't:'+P.tarjeta : '')}` : ''}</div></div>
       ${PERS().length ? `<div class="field"><span class="label">¿A quién se lo pagás?</span>${chipsDe('p', 'persona', [['', 'A nadie en particular']].concat(PERS().map(x => [x.id, x.nombre])), P.persona || '')}
         ${P.persona ? `<p class="note" style="margin:0">Aparece cada mes en Pendientes y en los movimientos de ${esc(nomPer(P.persona))}. Al marcarlo podés pagarlo o descontarlo de lo que te debe.</p>` : ''}</div>` : ''}` : ''}
@@ -2832,7 +2918,7 @@ async function enviarPlant(){
   if (P.id){ if (P.desde) data.desde = P.desde; } else data.desde = S.mes && S.mes < hoyMes() ? S.mes : hoyMes();
   if (P.tipo === 'mover' && P.modo) data.modo = P.modo;
   { const pv = P.id && S.plant.find(x => x.id === P.id); if (pv && pv.sh) data.sh = pv.sh; } // sigue vinculado al archivo compartido
-  if (P.tipo === 'gasto'){ data.sub = SUB(P.sub) ? P.sub : null; data.cat = P.cat || 'Fijos'; data.tarjeta = P.tarjeta || null; data.cuenta = P.tarjeta ? null : P.cuenta; data.descuentaDe = P.descuentaDe && S.plant.some(x => x.id === P.descuentaDe) ? P.descuentaDe : null; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
+  if (P.tipo === 'gasto'){ data.sub = null; data.cat = CAT(P.cat) ? P.cat : catDefecto(); data.tarjeta = P.tarjeta || null; data.cuenta = P.tarjeta ? null : P.cuenta; data.descuentaDe = P.descuentaDe && S.plant.some(x => x.id === P.descuentaDe) ? P.descuentaDe : null; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
   else if (P.tipo === 'ingreso'){ data.cuenta = P.cuenta; if (P.bhu) data.bhu = true; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
   else { data.de = P.de; data.a = P.a; const ma = monedasDe('c', P.a); data.monA = ma.includes(P.moneda) ? P.moneda : (ma.includes(monP().id) ? monP().id : ma[0]); }
   if (!S.db){ toast('Sin conexión con la base de datos'); return; }
@@ -2844,7 +2930,7 @@ function movDesdePlant(p, estado, mk){
   mk = mk || S.mes;
   const fecha = mk === hoyMes() ? hoy() : `${mk}-${mk < hoyMes() ? '28' : '01'}`;
   const monto = estado === 'omitido' ? 0 : (+p.monto || 0);
-  const o = {fecha, tipo:p.tipo, cat: p.tipo === 'gasto' ? (p.cat || 'Fijos') : p.tipo === 'mover' ? 'Transferencia' : 'Ingreso', concepto:p.nombre, monto, moneda:p.moneda,
+  const o = {fecha, tipo:p.tipo, cat: p.tipo === 'gasto' ? (CAT(p.cat) ? p.cat : catDefecto()) : p.tipo === 'mover' ? 'Transferencia' : 'Ingreso', concepto:p.nombre, monto, moneda:p.moneda,
     tasa: tasaDe(p.moneda) || 1, cuenta: p.cuenta || null, tarjeta: p.tarjeta || null, cuotas:1, estado, nota:'', plantilla:p.id, creado:Date.now()};
   if (p.tipo === 'mover'){ o.modo = p.modo || 'mover'; o.de = p.de; o.a = p.a; o.monA = p.monA || p.moneda; o.montoA = Math.round(convierte(monto, p.moneda, o.monA) * 100) / 100; o.cuenta = null; }
   if (p.tarjeta) o.mesResumen = mk;
