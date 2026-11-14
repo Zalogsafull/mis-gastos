@@ -2004,7 +2004,7 @@ function pasaFiltro(m, f){
   if (f.startsWith('tarjeta:')) return m.tarjeta === f.slice(8);
   if (f.startsWith('persona:')) return conPersona(m, f.slice(8));
   if (f.startsWith('cuenta:')){ const id = f.slice(7); return m.cuenta === id || m.de === id || m.a === id; }
-  if (f === 'gasto') return m.tipo === 'gasto' && !card;
+  if (f === 'gasto') return m.tipo === 'gasto';
   if (f.startsWith('cat:')) return m.tipo === 'gasto' && m.cat === f.slice(4); // también lo de tarjeta, en el mes en que se paga
   if (f === 'salidas') return m.tipo === 'gasto' || m.tipo === 'pago'; // también las compras con tarjeta (se listan en el mes en que se pagan; el neto no las suma dos veces)
   if (f === 'pend') return m.estado === 'pend';
@@ -2102,11 +2102,23 @@ function vPersona(pid){
   <p class="note">Cada cosa cuenta en su mes: lo que se paga de una cuenta, en el mes de la fecha; lo que va con tarjeta, en el mes en que cierra la tarjeta; y si ${nom} lo paga en cuotas con su tarjeta, desde el mes que elijas en "Empieza a pagarse en". Si pagó ${nom}, aparece en Pendientes "Pagarle a ${nom}". Cada mes se cierra solo: lo que quede sin pagar no pasa al mes siguiente.</p>
 `;
 }
+// Los filtros de Movimientos se combinan: uno por fila (Ver, Gastos, Tarjetas, Cuentas, Personas). S.filtro los guarda separados por "|"
+const grupoFiltro = k => k === 'gasto' || k.startsWith('cat:') ? 'gasto' : k.startsWith('tarjeta') ? 'tarjeta' : k.startsWith('cuenta:') ? 'cuenta' : k.startsWith('persona:') ? 'persona' : 'ver';
+const filtrosDe = f => !f || f === 'todo' ? [] : f.split('|').filter(Boolean);
+function tocarFiltro(k){
+  let fs = filtrosDe(S.filtro);
+  if (k === 'todo') fs = [];
+  else if (fs.includes(k)) fs = fs.filter(x => x !== k); // tocar uno pintado lo saca
+  else if (grupoFiltro(k) === 'ver') fs = [k]; // Ver empieza de nuevo
+  else fs = fs.filter(x => grupoFiltro(x) !== grupoFiltro(k)).concat([k]); // en las otras filas se suma, uno por fila
+  S.filtro = fs.join('|') || 'todo';
+}
 function vMovs(){
-  const mk = S.mes, f = S.filtro;
-  const pid = f.startsWith('persona:') && PER(f.slice(8)) ? f.slice(8) : null;
+  const mk = S.mes, fs = filtrosDe(S.filtro), f = fs.find(k => grupoFiltro(k) === 'ver') || '';
+  const pf = fs.find(k => k.startsWith('persona:')), pid = pf && PER(pf.slice(8)) ? pf.slice(8) : null;
+  const conTarjeta = fs.some(k => k === 'gasto' || k.startsWith('cat:') || k.startsWith('tarjeta')); // en esos filtros el neto suma las compras con tarjeta
   const filtrar = list => {
-    if (f !== 'todo') list = list.filter(x => pasaFiltro(x.m, f));
+    if (fs.length) list = list.filter(x => fs.every(k => pasaFiltro(x.m, k)));
     if (S.q) { const q = claveConcepto(S.q); list = list.filter(x => claveConcepto(x.m.concepto).includes(q) || claveConcepto(x.m.nota).includes(q)); }
     return list.sort((a,b) => (b.m.fecha||'').localeCompare(a.m.fecha||'') || (b.m.creado||0)-(a.m.creado||0));
   };
@@ -2121,12 +2133,12 @@ function vMovs(){
   const items = filtrar(todos.filter(x => x.m.estado !== 'pend'));
   const pend = filtrar(todos.filter(x => x.m.estado === 'pend').concat(pendientesComoFilas(mk)));
   const balP = pid ? balanceMes(pid, mk) : 0, nomP = pid ? esc(nomPer(pid)) : '';
-  const neto = x => { const m = x.m; if (isCard(m) && f.startsWith('cat:') && m.tipo === 'gasto') return -x.uyu; if (isCard(m) || m.viatico) return 0; const r = {ing:0, gastos:0, pagos:0, ahorro:0, tarjeta:0, ingP:0, salP:0, ahoP:0, tarP:0, ext:0, extP:0, cats:{}}; sumar(r, m, x.uyu, false); return r.ing - r.gastos - r.pagos - r.ahorro + r.ext; };
+  const neto = x => { const m = x.m; if (isCard(m) && conTarjeta && m.tipo === 'gasto') return -x.uyu; if (isCard(m) || m.viatico) return 0; const r = {ing:0, gastos:0, pagos:0, ahorro:0, tarjeta:0, ingP:0, salP:0, ahoP:0, tarP:0, ext:0, extP:0, cats:{}}; sumar(r, m, x.uyu, false); return r.ing - r.gastos - r.pagos - r.ahorro + r.ext; };
   const tot = items.reduce((a,x) => a + neto(x), 0);
   const totPend = pend.reduce((a,x) => a + x.uyu, 0);
-  const ch = (k, l) => `<button class="chip" data-act="filtro" data-f="${k}" aria-pressed="${S.filtro===k}">${esc(l)}</button>`;
+  const ch = (k, l) => `<button class="chip" data-act="filtro" data-f="${k}" aria-pressed="${k === 'todo' ? !fs.length : fs.includes(k)}">${esc(l)}</button>`;
   const visibles = ['todo','ingreso','salidas','mover','rec','eventos','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id), PERS().map(x => 'persona:'+x.id));
-  const extraChip = visibles.includes(f) ? '' : `<button class="chip" data-act="filtro" data-f="todo" aria-pressed="true" aria-label="Quitar filtro ${esc(FILTRO_LBL(f))}">${esc(FILTRO_LBL(f))} ✕</button>`;
+  const extraChip = fs.filter(k => !visibles.includes(k)).map(k => `<button class="chip" data-act="filtro" data-f="${esc(k)}" aria-pressed="true" aria-label="Quitar filtro ${esc(FILTRO_LBL(k))}">${esc(FILTRO_LBL(k))} ✕</button>`).join('');
   const fila = x => { const m = x.m, pos = esPositivo(m); return `<tr ${accionFila(x)}><td class="num">${m.virtual ? 'este mes' : dia(m.fecha)}</td><td>${esc(m.concepto||'')}${m.estado==='pend'?'<span class="pill pend">Pendiente</span>':''}</td><td>${esc(etiqueta(m))}</td><td>${esc(medioTxt(m))}</td><td class="num">${x.cuotas>1?`${x.cuota}/${x.cuotas}`:''}</td><td class="r num">${!esPpal(m.moneda)?fmtM(m):''}</td><td class="r num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</td><td class="note">${esc(x.ef || (m.virtual === 'plant' ? 'monto habitual' : m.nota||''))}</td></tr>`; };
   const tabla = list => `<div class="mobile-only list">${list.map(filaMov).join('')}</div>
     <div class="desk-only tablewrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Cuenta / tarjeta</th><th>Cuota</th><th class="r">Original</th><th class="r">${esc(monLbl(monP().id))}</th><th>Nota</th></tr></thead><tbody>${list.map(fila).join('')}</tbody></table></div>`;
@@ -2328,7 +2340,7 @@ async function borrarCat(){
     } catch(e){ toast('No se pudieron pasar todos los gastos. Probá de nuevo.'); return; }
   }
   if (await guardarCfg({cats: CATS().filter(k => k.id !== de).map(k => ({...k}))})){
-    if (S.filtro === 'cat:' + de) S.filtro = 'todo';
+    S.filtro = filtrosDe(S.filtro).filter(k => k !== 'cat:' + de).join('|') || 'todo';
     cerrar(); render(); toast(n ? `Gastos pasados a ${nomCat(a)} y categoría borrada` : 'Categoría borrada');
   }
 }
@@ -3645,7 +3657,7 @@ document.addEventListener('click', async ev => {
   if (a === 'tema'){ lsSet('misgastos.tema', t.dataset.v); aplicarTema(t.dataset.v); render(); return; }
   if (a === 'mes-hoy'){ S.mes = hoyMes(); render(); window.scrollTo(0, 0); return; }
   if (a === 'mes'){ const n = addMes(S.mes, +t.dataset.d); if (n < primerMesNav()){ toast('No hay datos antes de ' + nombreMes(primerMesNav()).toLowerCase()); return; } S.mes = n; render(); return; }
-  if (a === 'filtro'){ S.filtro = t.dataset.f; render(); return; }
+  if (a === 'filtro'){ tocarFiltro(t.dataset.f); render(); return; }
   if (a === 'ir'){ S.filtro = t.dataset.filtro || 'todo'; S.q = ''; if (location.hash === '#movimientos') render(); else location.hash = '#movimientos'; window.scrollTo(0, 0); return; }
   if (a === 'ir-ajustes'){ ajAbiertos.add('Cuentas'); location.hash = '#ajustes'; window.scrollTo(0, 0); return; }
   if (a === 'anio'){ S.anio = t.dataset.a; render(); return; }
