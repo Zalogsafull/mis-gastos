@@ -243,6 +243,7 @@ tbody tr:hover td{background:var(--raise)}
 .sem i{display:block;height:100%;border-radius:5px}
 .sem i.bien{background:var(--hero-ok)} .sem i.mal{background:var(--hero-mal)}
 .resmovs{margin-left:auto;text-align:right}
+.grid4.totales{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
 .netoper{margin-left:auto;font-weight:600;font-size:15px;text-align:right}.netoper.pos{color:var(--good)}
 .rango{width:100%;accent-color:var(--accent);margin:6px 0 2px;height:28px}.rango-lbl{display:flex;justify-content:space-between;font-size:14px}
 .pto{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
@@ -1952,6 +1953,11 @@ function vInicio(){
   const hayCambio = cuentasDia().some(c => c.monedas.length > 1);
   // Cada categoría con lo pagado con cuenta y las compras con tarjeta del resumen que se paga este mes
   const conTj = {}; for (const x of itemsDelMes(addMes(mk, -1))){ const m = x.m; if (m.tipo === 'gasto' && isCard(m) && m.estado !== 'omitido' && !(m.split && m.split.modo === 'prestado')) conTj[m.cat] = (conTj[m.cat] || 0) + x.uyu; }
+  // Recurrentes del mes: lo ya pagado (con cuenta o en el resumen de tarjeta de este mes) y lo que falta marcar
+  const tplR = idxRec(); let recHecho = 0;
+  for (const x of itemsDelMes(mk)){ const m = x.m; if (!isCard(m) && m.estado === 'pagado' && esRec(m, tplR)) recHecho += x.uyu; }
+  for (const x of itemsDelMes(addMes(mk, -1))){ const m = x.m; if (isCard(m) && esRec(m, tplR)) recHecho += x.uyu; }
+  const recFalta = pend.filter(p => p.kind === 'plant' ? p.p.tipo === 'gasto' && !p.p.tarjeta : p.kind === 'mov' && p.m && !isCard(p.m) && esRec(p.m, tplR)).reduce((a, p) => a + p.uyu, 0);
   const catTiles = CATS().map((c, i) => ({c, v: (r.cats[c.id] || 0) + (conTj[c.id] || 0), t: conTj[c.id] || 0, i})).sort((a,b) => b.v - a.v || a.i - b.i).map(({c, v, t}) => tile(c.nombre, v, colCat(c.id), t >= 1 ? `${Math.abs(v - t) < 1 ? 'todo' : fmt(t)} con tarjeta` : '', 'cat:'+c.id)).join(''); // de mayor a menor gasto
   return `
   <div class="top sticky">${monthNav()}</div>
@@ -1968,6 +1974,9 @@ function vInicio(){
   ${tarjetaViajes()}
   <div class="grid4">
     ${catTiles}
+  </div>
+  <div class="grid4 totales">
+    ${tile('Recurrentes', recHecho + recFalta, '--c-fijos', `${recFalta >= 1 ? `falta ${fmt(recFalta)}` : 'todo pagado'} · ya está en cada categoría`, 'rec')}
     ${listaTj.length ? tile('Pago tarjetas', r.pagos + pagoPend, '--c-tarjeta', `resumen de ${MESES[+addMes(mk,-1).slice(5)-1].toLowerCase()}${pagoPend ? ` · falta ${fmt(pagoPend)}` : ' · pagado'} · ya está en cada categoría`, 'pago') : ''}
   </div>
   ${listaTj.length ? `<section class="panel"><h2>Tarjetas <span>se pagan en ${mesSig} · no restan de este mes</span></h2>
