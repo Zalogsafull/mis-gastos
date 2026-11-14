@@ -2000,7 +2000,7 @@ function pasaFiltro(m, f){
   if (f === 'rec') return esRec(m) || m.virtual === 'plant' && m.tipo === 'gasto';
   return m.tipo === f;
 }
-const FILTRO_LBL = f => f.startsWith('ev:') ? (EV(f.slice(3))?.nombre || 'Viaje') : f.startsWith('persona:') ? nomPer(f.slice(8)) : f.startsWith('cat:') ? nomCat(f.slice(4)) : f.startsWith('tarjeta:') ? nomTj(f.slice(8)) : f.startsWith('cuenta:') ? nomCta(f.slice(7)) : ({eventos:'Viajes y salidas', salidas:'Salidas', pend:'Pendientes', mover:'Transferencias'}[f] || f);
+const FILTRO_LBL = f => f.startsWith('ev:') ? (EV(f.slice(3))?.nombre || 'Viaje') : f.startsWith('persona:') ? nomPer(f.slice(8)) : f.startsWith('cat:') ? nomCat(f.slice(4)) : f.startsWith('tarjeta:') ? nomTj(f.slice(8)) : f.startsWith('cuenta:') ? nomCta(f.slice(7)) : ({eventos:'Viajes y salidas', salidas:'Salidas', pend:'Pendientes', mover:'Transferencias', rec:'Recurrentes'}[f] || f);
 function accionFila(x){
   const m = x.m;
   if (m.virtual === 'plant') return `data-act="plantform" data-id="${m.pid}"`;
@@ -2114,7 +2114,7 @@ function vMovs(){
   const tot = items.reduce((a,x) => a + neto(x), 0);
   const totPend = pend.reduce((a,x) => a + x.uyu, 0);
   const ch = (k, l) => `<button class="chip" data-act="filtro" data-f="${k}" aria-pressed="${S.filtro===k}">${esc(l)}</button>`;
-  const visibles = ['todo','ingreso','salidas','mover','eventos','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id), PERS().map(x => 'persona:'+x.id));
+  const visibles = ['todo','ingreso','salidas','mover','rec','eventos','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id), PERS().map(x => 'persona:'+x.id));
   const extraChip = visibles.includes(f) ? '' : `<button class="chip" data-act="filtro" data-f="todo" aria-pressed="true" aria-label="Quitar filtro ${esc(FILTRO_LBL(f))}">${esc(FILTRO_LBL(f))} ✕</button>`;
   const fila = x => { const m = x.m, pos = esPositivo(m); return `<tr ${accionFila(x)}><td class="num">${m.virtual ? 'este mes' : dia(m.fecha)}</td><td>${esc(m.concepto||'')}${m.estado==='pend'?'<span class="pill pend">Pendiente</span>':''}</td><td>${esc(etiqueta(m))}</td><td>${esc(medioTxt(m))}</td><td class="num">${x.cuotas>1?`${x.cuota}/${x.cuotas}`:''}</td><td class="r num">${!esPpal(m.moneda)?fmtM(m):''}</td><td class="r num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</td><td class="note">${esc(x.ef || (m.virtual === 'plant' ? 'monto habitual' : m.nota||''))}</td></tr>`; };
   const tabla = list => `<div class="mobile-only list">${list.map(filaMov).join('')}</div>
