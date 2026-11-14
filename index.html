@@ -243,8 +243,9 @@ tbody tr:hover td{background:var(--raise)}
 .sem i{display:block;height:100%;border-radius:5px}
 .sem i.bien{background:var(--hero-ok)} .sem i.mal{background:var(--hero-mal)}
 .resmovs{margin-left:auto;text-align:right}
+.rubbar{display:flex;height:14px;border-radius:7px;overflow:hidden;gap:2px;margin:4px 0 14px}.rubbar i{display:block;min-width:3px}
 
-.grid4.totales{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.grid4.totales{margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid var(--line)}
 .netoper{margin-left:auto;font-weight:600;font-size:15px;text-align:right}.netoper.pos{color:var(--good)}
 .rango{width:100%;accent-color:var(--accent);margin:6px 0 2px;height:28px}.rango-lbl{display:flex;justify-content:space-between;font-size:14px}
 .pto{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
@@ -1880,6 +1881,7 @@ function render(){
   $('#main').innerHTML = `<div class="view">${banner()}${html}</div>`;
   if (S.view === 'ajustes') plegarAjustes();
   if (S.view === 'analisis') dibujarGraficas();
+  if (S.view === 'eventos' && $('#chv')) dibujarViaje();
   mostrarElegidos($('#main'));
   if (!MIGVJ && Object.values(S.ready).every(Boolean) && (S.evs || []).some(e => e.tipo === 'viaje')) setTimeout(migrarViajes, 80);
   if (!S.cfg.migRec && !MIGREC && Object.values(S.ready).every(Boolean) && ((S.cfg.cats || []).some(c => c.id === 'Fijos') || (S.cfg.subs || []).length)) setTimeout(migrarRecurrentes, 50);
@@ -1991,12 +1993,12 @@ function vInicio(){
     <div class="sub num"><button type="button" class="lnk" data-act="ir" data-filtro="ingreso">Ingresos ${fmt(r.ing + r.ingP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="salidas"><i class="pto" style="background:var(--c-extras)"></i>Salidas ${fmt(r.salida + r.salP)}</button><button type="button" class="lnk" data-act="ir" data-filtro="mover"><i class="pto" style="background:var(--c-ahorro)"></i>${r.ahorro + r.ahoP <= -1 ? `Sacado del ahorro ${fmt(-(r.ahorro + r.ahoP))}` : `Ahorro ${fmt(r.ahorro + r.ahoP)}`}</button>${r.saldoFin >= 1 ? `<span class="libre"><i class="pto pto-libre"></i>Libre ${fmt(r.saldoFin)}</span>` : ''}${Math.abs(r.ext + r.extP) >= 1 ? `<button type="button" class="lnk" data-act="ir" data-filtro="mover">${r.ext + r.extP > 0 ? 'Depósitos' : 'Retiros'} ${fmt(Math.abs(r.ext + r.extP))}</button>` : ''}</div>
   </section>
   ${tarjetaViajes()}
-  <div class="grid4">
-    ${catTiles}
-  </div>
   <div class="grid4 totales">
     ${tile('Recurrentes', recHecho + recFalta, '--c-fijos', `${recFalta >= 1 ? `falta ${fmt(recFalta)}` : 'todo pagado'} · ya está en cada categoría`, 'rec')}
     ${listaTj.length ? tile('Pago tarjetas', r.pagos + pagoPend, '--c-tarjeta', `resumen de ${MESES[+addMes(mk,-1).slice(5)-1].toLowerCase()}${pagoPend ? ` · falta ${fmt(pagoPend)}` : ' · pagado'} · ya está en cada categoría`, 'pago') : ''}
+  </div>
+  <div class="grid4">
+    ${catTiles}
   </div>
   ${listaTj.length ? `<section class="panel"><h2>Tarjetas <span>se pagan en ${mesSig} · no restan de este mes</span></h2>
     <div class="tablewrap"><table class="tj"><thead><tr><th>Tarjeta</th><th class="r">Gasto total</th><th class="r">A pagar en ${mesSig}</th></tr></thead><tbody>
@@ -2275,6 +2277,22 @@ function vAnalisis(){
     <p class="note">Las compras con tarjeta van en su categoría, el mes en que pagás el resumen.</p></section>`;
 }
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+// Gasto por día del viaje (barras por rubro) y lo acumulado (línea); lo de antes del viaje va en una sola barra al principio
+function dibujarViaje(){
+  const c = $('#chv'), e = S.evSel && EV(S.evSel); if (!window.Chart || !c || !e) return;
+  const gs = gastosEv(e.id), dias = []; let d = e.desde; const fin = e.hasta || e.desde;
+  while (d <= fin && dias.length < 120){ dias.push(d); const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + 1); d = x.toISOString().slice(0, 10); }
+  const cols = ['pre'].concat(dias), idx = m => m.fase !== 'viaje' || (m.fecha || '') < e.desde ? 0 : Math.max(1, Math.min(cols.length - 1, cols.indexOf(m.fecha) > 0 ? cols.indexOf(m.fecha) : (m.fecha > fin ? cols.length - 1 : 1)));
+  const usados = [...new Set(gs.map(rubroDe))], por = {}; for (const k of usados) por[k] = cols.map(() => 0);
+  for (const m of gs) por[rubroDe(m)][idx(m)] += enEv(m, e);
+  let ac = 0; const acum = cols.map((_, i) => ac += usados.reduce((a, k) => a + por[k][i], 0));
+  const sim = monLbl(e.moneda), money = v => Math.abs(v) >= 1000 ? sim + ' ' + Math.round(v / 1000).toLocaleString('es-UY') + ' mil' : sim + ' ' + Math.round(v).toLocaleString('es-UY');
+  Chart.defaults.font.family = css('--f-body'); Chart.defaults.color = css('--muted');
+  charts.push(new Chart(c, {data:{labels: cols.map(x => x === 'pre' ? 'Antes' : dia(x)), datasets: usados.map(k => ({type:'bar', label:nomRubro(k), data:por[k], backgroundColor:colRubro(k), stack:'s', borderRadius:2, yAxisID:'y'}))
+    .concat([{type:'line', label:'Acumulado', data:acum, borderColor:css('--ink'), borderWidth:2, pointRadius:2, tension:.25, yAxisID:'y2'}])},
+    options:{responsive:true, maintainAspectRatio:false, interaction:{mode:'index', intersect:false}, plugins:{legend:{display:true, position:'bottom', labels:{boxWidth:10, boxHeight:10}}, tooltip:{callbacks:{label: x => `${x.dataset.label}: ${fmtE(x.parsed.y, e)}`}}},
+      scales:{x:{stacked:true, grid:{display:false}, ticks:{maxRotation:0, autoSkip:true}}, y:{stacked:true, beginAtZero:true, grid:{color:css('--line')}, border:{display:false}, ticks:{callback:money}}, y2:{position:'right', beginAtZero:true, grid:{display:false}, border:{display:false}, ticks:{callback:money}}}}}));
+}
 function dibujarGraficas(){
   if (!window.Chart) return;
   const all = serie();
@@ -2787,7 +2805,7 @@ async function enviarForm(){
   if (card) data.mesResumen = F.mesResumen;
   if (F.tipo === 'gasto' && F.evento && EV(F.evento)){ data.evento = F.evento; data.fase = F.fase || (hoy() < EV(F.evento).desde ? 'pre' : 'viaje');
     if (enViajeF() && !card && !pagoOtro(F)){ data.viatico = true; data.cuenta = null; } else if (prev && prev.viatico) data.viatico = null;
-    data.rubro = (EV(F.evento) || {}).tipo === 'viaje' && F.rubro ? F.rubro : null;
+    data.rubro = (EV(F.evento) || {}).tipo === 'viaje' ? (RUBS().some(x => x.id === F.rubro) ? F.rubro : rubroPorDefecto(data.fase)) : null;
     if ((EV(F.evento) || {}).tipo === 'viaje') data.cat = await asegurarViajes(); }
   else if (prev && prev.viatico) data.viatico = null;
   else if (prev && prev.evento && !prev.division){ data.evento = null; data.fase = null; }
@@ -3284,18 +3302,25 @@ const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T
 
 // ---------- En la hoja de un gasto que viene del botón de un viaje ----------
 // El + de siempre no pregunta nada de viajes: solo el botón amarillo de cada viaje lo asocia.
-// Rubros de un viaje: solo para ver en el viaje en qué se fue la plata (no cambian la categoría ni las cuentas). Se adivinan por el concepto y se pueden cambiar.
-const RUBROS = [['pasajes','Pasajes'], ['alojamiento','Alojamiento'], ['entradas','Entradas a lugares'], ['ocio','Ocio']];
-const RUBRO_PAL = {pasajes:/vuelo|pasaje|aerolin|aereo|buquebus|colonia express|ferry|latam|iberia|avion|cruzando el charco|taxi|uber|cabify|omnibus|bus\b|metro|subte|tren|remis|transfer|alquiler de auto|rent a car/, alojamiento:/hotel|hostel|booking|airbnb|aloja|posada|cabana|apart/,
-  entradas:/entrada|museo|tour|excursion|ticket|parque|concierto|catedral|palacio|opera|card\b|teatro|visita|coliseo/};
-function rubroAuto(m){ // lo que no es pasaje, alojamiento ni entrada es ocio (comidas, salidas, compras…)
-  const k = claveConcepto(m.concepto);
-  for (const [r, re] of Object.entries(RUBRO_PAL)) if (re.test(k)) return r;
-  return 'ocio';
+// Rubros de un viaje: solo para ver en el viaje en qué se fue la plata (en tus meses todo va a la categoría Viajes).
+// Se editan desde el viaje. Por defecto: antes del viaje, Pasajes; durante, Alimentación.
+const RUBROS_DEF = [{id:'pasajes', nombre:'Pasajes', color:'#5b6fd6'}, {id:'alojamiento', nombre:'Alojamiento', color:'#8a5a44'}, {id:'alimentacion', nombre:'Alimentación', color:'#23907f'}, {id:'entradas', nombre:'Entradas a lugares', color:'#c2456b'}, {id:'ocio', nombre:'Ocio', color:'#c27a1d'}];
+const RUBS = () => S.cfg.rubros && S.cfg.rubros.length ? S.cfg.rubros : RUBROS_DEF;
+const rubroPorDefecto = fase => { const ids = RUBS().map(x => x.id); const q = fase === 'pre' ? 'pasajes' : 'alimentacion'; return ids.includes(q) ? q : ids[0]; };
+const rubroDe = m => RUBS().some(x => x.id === m.rubro) ? m.rubro : rubroPorDefecto(m.fase);
+const nomRubro = k => (RUBS().find(x => x.id === k) || {}).nombre || 'Otros';
+const colRubro = k => (RUBS().find(x => x.id === k) || {}).color || '#6c7f93';
+let RB = null;
+function abrirRubros(re){
+  if (!re) RB = {lista: RUBS().map(x => ({...x})), nuevo:''};
+  $('#overlay').innerHTML = `<div class="scrim" data-act="close"><div class="sheet${re ? '' : ' anim'}" id="rbsheet" role="dialog" aria-modal="true" aria-label="Rubros de los viajes">
+    <header><h3>Rubros de los viajes</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
+    <p class="note" style="margin:0">Sirven para ver en cada viaje en qué se gastó. Cambiales el nombre, borrá los que no uses o agregá otros. Los gastos de un rubro borrado pasan al de por defecto.</p>
+    <div class="list">${RB.lista.map((x, i) => `<div class="row" style="gap:8px"><i class="dot" style="background:${x.color};width:12px;height:12px;border-radius:50%;flex:none"></i><input class="inp" data-rbn="${i}" value="${esc(x.nombre)}" aria-label="Nombre del rubro" style="flex:1">${RB.lista.length > 1 ? `<button type="button" class="iconbtn" data-act="rbdel" data-i="${i}" aria-label="Borrar ${esc(x.nombre)}">${chev('M6 6l12 12M18 6L6 18')}</button>` : ''}</div>`).join('')}</div>
+    <div class="filters"><input class="inp" id="rb-nuevo" placeholder="Nuevo rubro, ej.: Compras" value="${esc(RB.nuevo)}" autocomplete="off" style="flex:1;max-width:none"><button type="button" class="btn" data-act="rbadd">Agregar</button></div>
+    <div class="actions"><span></span><button type="button" class="btn primary" data-act="rbok">Guardar</button></div></div></div>`;
 }
-const rubroDe = m => RUBROS.some(([k]) => k === m.rubro) ? m.rubro : rubroAuto(m);
-const nomRubro = k => (RUBROS.find(([x]) => x === k) || [, 'Ocio'])[1];
-const COL_RUBRO = {pasajes:'#5b6fd6', alojamiento:'#8a5a44', entradas:'#c2456b', ocio:'#23907f'};
+const leerRB = () => { if (!RB) return; document.querySelectorAll('[data-rbn]').forEach(el => { const x = RB.lista[+el.dataset.rbn]; if (x) x.nombre = el.value; }); RB.nuevo = $('#rb-nuevo')?.value ?? RB.nuevo; };
 function bloqueViaje(){
   const e = F.evento ? EV(F.evento) : null;
   if (!e || e.tipo !== 'viaje') return '';
@@ -3304,7 +3329,7 @@ function bloqueViaje(){
   const nota = F.fase === 'viaje' ? `Queda dentro del viaje: lo que dividís se salda en el viaje.${r.pres ? ` Viáticos: quedan ${fmtE(r.queda + (prev && prev.viatico ? ya : 0), e)}.` : ''}` : 'Suma al total del viaje. En tus gastos aparece como siempre.';
   return `<div class="field"><span class="label">${icoEv(e)}${esc(e.nombre)}</span>${seg('f', 'fase', [['pre', 'Antes del viaje'], ['viaje', 'Durante el viaje']], F.fase)}
     <span class="note">${esc(nota)}${F.id ? ' <button type="button" class="lnk" data-f="evento" data-v="">Sacarlo del viaje</button>' : ''}</span></div>
-    <div class="field"><span class="label">Rubro del viaje</span>${chipsFila('f', 'rubro', [['', `Automático: ${nomRubro(rubroAuto({concepto: $('#f-concepto')?.value ?? F.concepto, cat:F.cat}))}`]].concat(RUBROS), F.rubro || '')}
+    <div class="field"><span class="label">Rubro del viaje</span>${chipsFila('f', 'rubro', RUBS().map(x => [x.id, x.nombre]), RUBS().some(x => x.id === F.rubro) ? F.rubro : rubroPorDefecto(F.fase))}
       <span class="note">Va a la categoría Viajes. El rubro es para ver en el viaje en qué se gastó.</span></div>`;
 }
 function nuevoGastoViaje(e, fase){
@@ -3352,10 +3377,13 @@ function vEvento(e){
       ${r.pres ? `<p class="note num" style="margin:8px 0 0">${Object.entries(r.aportes).filter(([, v]) => Math.abs(v) >= 0.5).map(([k, v]) => `${k === 'yo' ? 'Vos' : esc(nomPer(k))} ${fmt(v)}`).join(' · ')} · gastado ${fmtE(r.usado, e)} · quedan ${fmtE(r.queda, e)}${r.queda >= 0.5 && Object.keys(r.aportes).filter(k => r.aportes[k] > 0).length > 1 ? ` (${Object.entries(r.aportes).filter(([, v]) => v > 0).map(([k, v]) => `${k === 'yo' ? 'tuyos' : 'de ' + esc(nomPer(k))} ${fmtE(r.queda * v / (r.cargas * (tasaDe(e.moneda) || 1)), e)}`).join(', ')})` : ''}</p>
       <p class="note" style="margin:4px 0 0">Cada gasto pagado con viáticos lo paga cada uno en proporción a lo que puso; la diferencia con lo que le tocaba queda en "Con quién".</p>` : ''}</section>
     ${(() => { if (!gs.length) return ''; const o = {}, mia = {}; for (const m of gs){ const k = rubroDe(m), v = enEv(m, e); o[k] = (o[k] || 0) + v; mia[k] = (mia[k] || 0) + v * parteMia(m); }
-      const filas = Object.entries(o).sort((a, b) => b[1] - a[1]), max = Math.max(...filas.map(f => f[1]), 1);
-      return `<section class="panel"><h2>En qué se gastó <span class="num">${fmtE(r.total, e)}</span></h2>
-        <div class="bars">${filas.map(([k, v]) => `<div class="bar"><span class="bn">${esc(nomRubro(k))}<small>${Math.round(v / (r.total || 1) * 100)} %${Math.abs(mia[k] - v) >= 1 ? ` · tu parte ${fmtE(mia[k], e)}` : ''}</small></span><span class="bt"><i style="width:${(v / max * 100).toFixed(1)}%;background:${COL_RUBRO[k]}"></i></span><span class="bv num">${fmtE(v, e)}</span></div>`).join('')}</div>
-        <p class="note" style="margin:8px 0 0">Todo lo del viaje, antes y durante, con lo que pagaron los demás y en cuotas el total. En tus meses, todo esto está en la categoría Viajes. El rubro se elige solo por el concepto; lo podés cambiar al editar el gasto.</p></section>`; })()}
+      const filas = Object.entries(o).sort((a, b) => b[1] - a[1]), max = Math.max(...filas.map(f => f[1]), 1), tot = r.total || 1;
+      return `<section class="panel"><h2>En qué se gastó <span><span class="num">${fmtE(r.total, e)}</span> <button class="btn" data-act="rbabrir">Editar rubros</button></span></h2>
+        <div class="rubbar" role="img" aria-label="Reparto del total por rubro">${filas.map(([k, v]) => `<i style="flex:${(v / tot).toFixed(4)};background:${colRubro(k)}" title="${esc(nomRubro(k))} ${Math.round(v / tot * 100)} %"></i>`).join('')}</div>
+        <div class="bars">${filas.map(([k, v]) => `<div class="bar"><span class="bn">${esc(nomRubro(k))}<small>${Math.round(v / tot * 100)} %${Math.abs(mia[k] - v) >= 1 ? ` · tu parte ${fmtE(mia[k], e)}` : ''}</small></span><span class="bt"><i style="width:${(v / max * 100).toFixed(1)}%;background:${colRubro(k)}"></i></span><span class="bv num">${fmtE(v, e)}</span></div>`).join('')}</div>
+        <h3 class="label" style="margin:16px 0 6px">Cómo se fue gastando</h3>
+        <div class="chartbox" style="height:220px"><canvas id="chv" aria-label="Gasto por día del viaje, por rubro, y total acumulado"></canvas></div>
+        <p class="note" style="margin:8px 0 0">Todo lo del viaje, con lo que pagaron los demás y el total de las compras en cuotas. En tus meses, todo esto está en la categoría Viajes. Por defecto, lo de antes del viaje va a Pasajes y lo de durante a Alimentación; lo cambiás al editar cada gasto.</p></section>`; })()}
     ${lista('Durante el viaje', gs.filter(m => m.fase === 'viaje'), 'Lo que pagás con viáticos o con tarjeta durante el viaje.', `<button class="btn via" data-act="evaddfase" data-id="${e.id}" data-fase="viaje">+ Gasto del viaje</button>`)}
     ${lista('Antes del viaje', gs.filter(m => m.fase !== 'viaje'), 'Vuelos, reservas, seguro… Cuentan en tus meses como cualquier gasto.', `<button class="btn via" data-act="evaddfase" data-id="${e.id}" data-fase="pre">+ Gasto previo</button>`)}
     <section class="panel"><h2>Con quién</h2>
@@ -3666,7 +3694,7 @@ document.addEventListener('click', async ev => {
       arreglarMoneda();
     }
     else if (k === 'medio'){ const [tp, id] = [v.slice(0,1), v.slice(2)]; if (tp === 't'){ F.tarjeta = id; F.viatico = false; } else if (tp === 'v'){ F.tarjeta = null; F.viatico = true; F.cuotas = 1; } else { F.tarjeta = null; F.cuenta = id; F.cuotas = 1; F.viatico = false; } F.resManual = false; arreglarMoneda(); }
-    else if (k === 'fase'){ F.fase = v; if (v === 'viaje' && !F.tarjeta){ F.viatico = true; F.cuotas = 1; } if (v === 'pre'){ F.viatico = false; if (!CTA(F.cuenta)) F.cuenta = cuentaDefecto(); } arreglarMoneda(); }
+    else if (k === 'fase'){ if (!F.rubroManual) F.rubro = null; F.fase = v; if (v === 'viaje' && !F.tarjeta){ F.viatico = true; F.cuotas = 1; } if (v === 'pre'){ F.viatico = false; if (!CTA(F.cuenta)) F.cuenta = cuentaDefecto(); } arreglarMoneda(); }
     else if (k === 'cuenta'){ F.cuenta = v; arreglarMoneda(); }
     else if (k === 'evento'){ F.evento = v || null; F.fase = null; }
     else if (k === 'tarjeta'){ F.tarjeta = v; const cp = TJ(v)?.cuentaPago; if (cp && CTA(cp)) F.cuenta = cp; arreglarMoneda(); }
@@ -3681,7 +3709,7 @@ document.addEventListener('click', async ev => {
     else if (k === 'perIng'){ const modo = F.cargo ? 'cargo' : 'saldo'; F.saldo = F.cargo = null; F.compensado = false; if (v) F[modo] = v; }
     else if (k === 'perModo'){ const pp = F.saldo || F.cargo; F.saldo = F.cargo = null; F.compensado = false; if (pp) F[v === 'cargo' ? 'cargo' : 'saldo'] = pp; }
     else if (k === 'ingDesc'){ F.ingDesc = v || null; F.plantilla = v || null; F.inclDesc = true; const pi = S.plant.find(x => x.id === v); if (pi){ if (!F.concepto) F.concepto = pi.nombre; if (!F.montoTxt) F.montoTxt = dec(pi.monto); } }
-    else F[k] = v;
+    else { F[k] = v; if (k === 'rubro') F.rubroManual = true; }
     abrirHoja(true); if (k === 'concepto') $('#f-monto')?.focus(); return;
   }
   if (t.dataset.m && M){
@@ -3713,6 +3741,10 @@ document.addEventListener('click', async ev => {
   const a = t.dataset.act;
   if (a && (a.startsWith('ev') || a.startsWith('vc')) || a === 'vinv' || a === 'navev'){ if (await accionEventos(a, t)) return; }
   if (a === 'catnew'){ abrirCat(null); return; }
+  if (a === 'rbabrir'){ abrirRubros(); return; }
+  if (a === 'rbdel' && RB){ leerRB(); RB.lista.splice(+t.dataset.i, 1); abrirRubros(true); return; }
+  if (a === 'rbadd' && RB){ leerRB(); const n = RB.nuevo.trim(); if (!n) return; const usados = RB.lista.map(x => x.color); RB.lista.push({id:genId('r'), nombre:n, color: PALETA.find(c => !usados.includes(c)) || PALETA[RB.lista.length % PALETA.length]}); RB.nuevo = ''; abrirRubros(true); return; }
+  if (a === 'rbok' && RB){ leerRB(); const lista = RB.lista.map(x => ({...x, nombre:x.nombre.trim()})).filter(x => x.nombre); if (!lista.length){ toast('Dejá al menos un rubro'); return; } if (await guardarCfg({rubros:lista})){ RB = null; cerrar(); toast('Rubros guardados'); } return; }
   if (a === 'rgabrir'){ abrirReagrupar(); return; }
   if (a === 'rgbuscar' && RG){ RG.palabras = $('#rg-pal').value; RG.nueva = $('#rg-nueva')?.value ?? RG.nueva; RG.fuera = new Set(); abrirReagrupar(true); return; }
   if (a === 'rgok' && RG){ await aplicarReagrupar(t); return; }
