@@ -3304,8 +3304,8 @@ const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T
 // El + de siempre no pregunta nada de viajes: solo el botón amarillo de cada viaje lo asocia.
 // Rubros de un viaje: solo para ver en el viaje en qué se fue la plata (en tus meses todo va a la categoría Viajes).
 // Se editan desde el viaje. Por defecto: antes del viaje, Pasajes; durante, Alimentación.
-const RUBROS_DEF = [{id:'pasajes', nombre:'Pasajes', color:'#5b6fd6'}, {id:'alojamiento', nombre:'Alojamiento', color:'#8a5a44'}, {id:'alimentacion', nombre:'Alimentación', color:'#23907f'}, {id:'entradas', nombre:'Entradas a lugares', color:'#c2456b'}, {id:'ocio', nombre:'Ocio', color:'#c27a1d'}];
-const RUBS = () => S.cfg.rubros && S.cfg.rubros.length ? S.cfg.rubros : RUBROS_DEF;
+const RUBROS_DEF = [{id:'pasajes', nombre:'Pasajes', color:'#5b6fd6'}, {id:'alojamiento', nombre:'Alojamiento', color:'#8a5a44'}, {id:'alimentacion', nombre:'Alimentación', color:'#23907f'}, {id:'entradas', nombre:'Entradas', color:'#c2456b'}, {id:'ocio', nombre:'Ocio', color:'#c27a1d'}];
+const RUBS = () => S.cfg.rubros && S.cfg.rubros.length ? S.cfg.rubros.map(x => x.id === 'entradas' && x.nombre === 'Entradas a lugares' ? {...x, nombre:'Entradas'} : x) : RUBROS_DEF;
 const rubroPorDefecto = fase => { const ids = RUBS().map(x => x.id); const q = fase === 'pre' ? 'pasajes' : 'alimentacion'; return ids.includes(q) ? q : ids[0]; };
 const rubroDe = m => RUBS().some(x => x.id === m.rubro) ? m.rubro : rubroPorDefecto(m.fase);
 const nomRubro = k => (RUBS().find(x => x.id === k) || {}).nombre || 'Otros';
