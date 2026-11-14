@@ -243,7 +243,7 @@ tbody tr:hover td{background:var(--raise)}
 .sem i{display:block;height:100%;border-radius:5px}
 .sem i.bien{background:var(--hero-ok)} .sem i.mal{background:var(--hero-mal)}
 .resmovs{margin-left:auto;text-align:right}
-@media (max-width:899px){.top.antop .chips.fila{flex:1 1 100%!important;flex-wrap:wrap!important;overflow:visible;-webkit-mask-image:none;mask-image:none;margin-inline:0;padding-inline:0}}
+
 .grid4.totales{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
 .netoper{margin-left:auto;font-weight:600;font-size:15px;text-align:right}.netoper.pos{color:var(--good)}
 .rango{width:100%;accent-color:var(--accent);margin:6px 0 2px;height:28px}.rango-lbl{display:flex;justify-content:space-between;font-size:14px}
@@ -744,7 +744,24 @@ const pagoOtro = m => !!(m && m.split && m.split.pagador && m.split.pagador !== 
 // Durante un viaje: lo que se paga con viáticos o lo salda la gente del viaje queda dentro del viaje (no toca el día a día ni la cuenta del mes con esa persona)
 const enViajeM = m => !!(m && m.evento && m.fase === 'viaje' && (EV(m.evento) || {}).tipo === 'viaje');
 const enViajeF = () => !!(F && F.tipo === 'gasto' && F.evento && (EV(F.evento) || {}).tipo === 'viaje' && (F.fase || (hoy() < EV(F.evento).desde ? 'pre' : 'viaje')) === 'viaje');
-const catViajes = () => CAT('Viajes') ? 'Viajes' : CAT('Extras') ? 'Extras' : catDefecto();
+const idViajes = () => CAT('Viajes') ? 'Viajes' : (CATS().find(c => claveConcepto(c.nombre) === 'viajes') || {}).id || null;
+const catViajes = () => idViajes() || (CAT('Extras') ? 'Extras' : catDefecto());
+// Los gastos de un viaje van siempre a la categoría Viajes (si no existe, se crea)
+async function asegurarViajes(){
+  const id = idViajes(); if (id) return id;
+  const cats = CATS().map(c => ({...c})); cats.push({id:'Viajes', nombre:'Viajes', color: colorDistinto('#b0600c', cats), dia:false});
+  return (await guardarCfg({cats})) ? 'Viajes' : catDefecto();
+}
+let MIGVJ = false;
+async function migrarViajes(){
+  if (MIGVJ) return; MIGVJ = true;
+  try {
+    const malos = S.movs.filter(m => m.tipo === 'gasto' && m.evento && (EV(m.evento) || {}).tipo === 'viaje' && m.cat !== idViajes());
+    if (!malos.length) return;
+    const id = await asegurarViajes(); await new Promise(ok => setTimeout(ok, 30));
+    for (const m of malos) await S.db.collection(COL.movs).doc(m.id).update({cat:id});
+  } catch(e){ console.error(e); }
+}
 // Lo que cada movimiento cambia en el balance con una persona (en moneda principal): + te debe, − le debés
 // Parte ya vencida de una compra en cuotas a un mes dado (1 si es en una sola)
 // Mes desde el que cuenta un gasto con otra persona: con tarjeta, el del cierre; si lo pagó otra persona en cuotas, el que se eligió; si no, el de la fecha
@@ -1864,6 +1881,7 @@ function render(){
   if (S.view === 'ajustes') plegarAjustes();
   if (S.view === 'analisis') dibujarGraficas();
   mostrarElegidos($('#main'));
+  if (!MIGVJ && Object.values(S.ready).every(Boolean) && (S.evs || []).some(e => e.tipo === 'viaje')) setTimeout(migrarViajes, 80);
   if (!S.cfg.migRec && !MIGREC && Object.values(S.ready).every(Boolean) && ((S.cfg.cats || []).some(c => c.id === 'Fijos') || (S.cfg.subs || []).length)) setTimeout(migrarRecurrentes, 50);
   if (lsGet(LS_UNIRSE) && !S.unirseVisto && S.modo === 'local' && Object.values(S.ready).every(Boolean) && !$('#overlay').innerHTML){ S.unirseVisto = true; setTimeout(abrirUnirse, 300); }
 }
@@ -2218,7 +2236,7 @@ function vAnalisis(){
   const mc = S.cfg.monedaCapital && S.cfg.monedas.some(m => m.id === S.cfg.monedaCapital) ? S.cfg.monedaCapital : monP().id;
   const sim = esc(monLbl(monP().id));
   return `
-  <div class="top antop"><h1 style="font-size:22px">Análisis</h1><div class="chips fila" style="flex:1">${ch('todos','Todo')}${anios.map(y => ch(y,y)).join('')}<span style="margin-left:auto;display:flex;gap:inherit;flex:none">${ch('u6','Últimos 6 meses')}${ch('u12','Últimos 12 meses')}</span></div></div>
+  <div class="top antop"><h1 style="font-size:22px">Análisis</h1><div class="chips fila">${ch('todos','Todo')}${anios.map(y => ch(y,y)).join('')}${ch('u12','Últimos 12 meses')}${ch('u6','Últimos 6 meses')}</div></div>
   <div class="grid4">
     <div class="tile"><span class="label">Ingresos</span><span class="v num">${fmt(ing)}</span><span class="note num">${sel.length} ${sel.length === 1 ? 'mes' : 'meses'}</span></div>
     <div class="tile"><span class="label">Salidas</span><span class="v num">${fmt(sal)}</span><span class="note num">${fmt(sel.length?sal/sel.length:0)} por mes</span></div>
@@ -2633,7 +2651,7 @@ function abrirHoja(re){
     <div class="amount"><button type="button" data-act="moneda" aria-label="Cambiar moneda"${ms.length < 2 ? ' tabindex="-1"' : ''}>${esc(monLbl(F.moneda))}</button><input id="f-monto" inputmode="decimal" autocomplete="off" placeholder="0" value="${esc(F.montoTxt)}" aria-label="Monto"></div>
     <p class="note num" id="f-conv" style="margin:-6px 0 0"></p>
     ${F.tipo === 'pago' ? '<div id="f-tras"></div>' : ''}
-    ${F.tipo==='gasto' ? `<div class="field"><span class="label">Categoría</span>${chipsFila('f', 'cat', porUso(CATS().map(c => [c.id, c.nombre]), usoCat()), F.cat)}</div>` : ''}
+    ${F.tipo==='gasto' && !(F.evento && (EV(F.evento) || {}).tipo === 'viaje') ? `<div class="field"><span class="label">Categoría</span>${chipsFila('f', 'cat', porUso(CATS().map(c => [c.id, c.nombre]), usoCat()), F.cat)}</div>` : ''}
     ${F.tipo === 'pago' ? '' : `<div class="field"><label for="f-concepto">${F.tipo==='gasto'?'Dónde / en qué':'Concepto'}</label><input class="inp" id="f-concepto" autocomplete="off" value="${esc(F.concepto)}" placeholder="${F.tipo==='gasto'?(F.cat==='Súper'?'Supermercado, feria…':'Farmacia, taxi…'):'Sueldo, aguinaldo…'}">
       ${sug.length ? chipsDe('f', 'concepto', sug.map(s => [s,s]), F.concepto) : ''}</div>`}
     ${F.tipo === 'gasto' && !F.plRef && !F.cargo ? bloqueViaje() : ''}
@@ -2769,7 +2787,8 @@ async function enviarForm(){
   if (card) data.mesResumen = F.mesResumen;
   if (F.tipo === 'gasto' && F.evento && EV(F.evento)){ data.evento = F.evento; data.fase = F.fase || (hoy() < EV(F.evento).desde ? 'pre' : 'viaje');
     if (enViajeF() && !card && !pagoOtro(F)){ data.viatico = true; data.cuenta = null; } else if (prev && prev.viatico) data.viatico = null;
-    data.rubro = (EV(F.evento) || {}).tipo === 'viaje' && F.rubro ? F.rubro : null; }
+    data.rubro = (EV(F.evento) || {}).tipo === 'viaje' && F.rubro ? F.rubro : null;
+    if ((EV(F.evento) || {}).tipo === 'viaje') data.cat = await asegurarViajes(); }
   else if (prev && prev.viatico) data.viatico = null;
   else if (prev && prev.evento && !prev.division){ data.evento = null; data.fase = null; }
   if (F.tipo === 'gasto' && F.splitOpen && !(F.split && F.split.con.length) && PERS().length){ toast('Elegí con quién lo compartís, o sacá el tilde'); return; }
@@ -3266,20 +3285,17 @@ const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00') - new Date(a + 'T
 // ---------- En la hoja de un gasto que viene del botón de un viaje ----------
 // El + de siempre no pregunta nada de viajes: solo el botón amarillo de cada viaje lo asocia.
 // Rubros de un viaje: solo para ver en el viaje en qué se fue la plata (no cambian la categoría ni las cuentas). Se adivinan por el concepto y se pueden cambiar.
-const RUBROS = [['pasajes','Pasajes'], ['alojamiento','Alojamiento'], ['traslados','Traslados'], ['comida','Comida'], ['entradas','Entradas y paseos'], ['compras','Compras'], ['otros','Otros']];
-const RUBRO_PAL = {pasajes:/vuelo|pasaje|aerolin|aereo|buquebus|colonia express|ferry|latam|iberia|avion|cruzando el charco/, alojamiento:/hotel|hostel|booking|airbnb|aloja|posada|cabana|apart/,
-  traslados:/taxi|uber|cabify|bolt|omnibus|bus\b|metro|subte|tren|remis|transfer|alquiler de auto|rent a car|nafta|peaje|estacionamiento|bici/,
-  entradas:/entrada|museo|tour|excursion|ticket|parque|show|concierto|catedral|palacio|opera|card\b|teatro|visita|coliseo/,
-  compras:/free ?shop|duty free|regalo|souvenir|compra|tienda|shopping|outlet/, comida:/restaurant|cena|almuerzo|desayuno|cafe|bar\b|super|mercado|comida|pizza|parrilla|helado/};
-function rubroAuto(m){
+const RUBROS = [['pasajes','Pasajes'], ['alojamiento','Alojamiento'], ['entradas','Entradas a lugares'], ['ocio','Ocio']];
+const RUBRO_PAL = {pasajes:/vuelo|pasaje|aerolin|aereo|buquebus|colonia express|ferry|latam|iberia|avion|cruzando el charco|taxi|uber|cabify|omnibus|bus\b|metro|subte|tren|remis|transfer|alquiler de auto|rent a car/, alojamiento:/hotel|hostel|booking|airbnb|aloja|posada|cabana|apart/,
+  entradas:/entrada|museo|tour|excursion|ticket|parque|concierto|catedral|palacio|opera|card\b|teatro|visita|coliseo/};
+function rubroAuto(m){ // lo que no es pasaje, alojamiento ni entrada es ocio (comidas, salidas, compras…)
   const k = claveConcepto(m.concepto);
   for (const [r, re] of Object.entries(RUBRO_PAL)) if (re.test(k)) return r;
-  if (m.cat === 'Súper' || m.cat === 'Alimentación' || /aliment|comida/.test(claveConcepto(nomCat(m.cat)))) return 'comida';
-  return 'otros';
+  return 'ocio';
 }
 const rubroDe = m => RUBROS.some(([k]) => k === m.rubro) ? m.rubro : rubroAuto(m);
-const nomRubro = k => (RUBROS.find(([x]) => x === k) || [, 'Otros'])[1];
-const COL_RUBRO = {pasajes:'#5b6fd6', alojamiento:'#8a5a44', traslados:'#e8590c', comida:'#23907f', entradas:'#c2456b', compras:'#ae3ec9', otros:'#6c7f93'};
+const nomRubro = k => (RUBROS.find(([x]) => x === k) || [, 'Ocio'])[1];
+const COL_RUBRO = {pasajes:'#5b6fd6', alojamiento:'#8a5a44', entradas:'#c2456b', ocio:'#23907f'};
 function bloqueViaje(){
   const e = F.evento ? EV(F.evento) : null;
   if (!e || e.tipo !== 'viaje') return '';
@@ -3289,7 +3305,7 @@ function bloqueViaje(){
   return `<div class="field"><span class="label">${icoEv(e)}${esc(e.nombre)}</span>${seg('f', 'fase', [['pre', 'Antes del viaje'], ['viaje', 'Durante el viaje']], F.fase)}
     <span class="note">${esc(nota)}${F.id ? ' <button type="button" class="lnk" data-f="evento" data-v="">Sacarlo del viaje</button>' : ''}</span></div>
     <div class="field"><span class="label">Rubro del viaje</span>${chipsFila('f', 'rubro', [['', `Automático: ${nomRubro(rubroAuto({concepto: $('#f-concepto')?.value ?? F.concepto, cat:F.cat}))}`]].concat(RUBROS), F.rubro || '')}
-      <span class="note">Solo para ver en el viaje en qué se gastó. No cambia la categoría.</span></div>`;
+      <span class="note">Va a la categoría Viajes. El rubro es para ver en el viaje en qué se gastó.</span></div>`;
 }
 function nuevoGastoViaje(e, fase){
   const mon = e.moneda, cta = (cuentasDia().find(c => c.monedas.includes(mon)) || {}).id;
@@ -3339,7 +3355,7 @@ function vEvento(e){
       const filas = Object.entries(o).sort((a, b) => b[1] - a[1]), max = Math.max(...filas.map(f => f[1]), 1);
       return `<section class="panel"><h2>En qué se gastó <span class="num">${fmtE(r.total, e)}</span></h2>
         <div class="bars">${filas.map(([k, v]) => `<div class="bar"><span class="bn">${esc(nomRubro(k))}<small>${Math.round(v / (r.total || 1) * 100)} %${Math.abs(mia[k] - v) >= 1 ? ` · tu parte ${fmtE(mia[k], e)}` : ''}</small></span><span class="bt"><i style="width:${(v / max * 100).toFixed(1)}%;background:${COL_RUBRO[k]}"></i></span><span class="bv num">${fmtE(v, e)}</span></div>`).join('')}</div>
-        <p class="note" style="margin:8px 0 0">Todo lo del viaje, antes y durante, con lo que pagaron los demás y en cuotas el total. Solo se ve acá: no cambia tus categorías ni tus cuentas. El rubro se elige solo por el concepto; lo podés cambiar al editar el gasto.</p></section>`; })()}
+        <p class="note" style="margin:8px 0 0">Todo lo del viaje, antes y durante, con lo que pagaron los demás y en cuotas el total. En tus meses, todo esto está en la categoría Viajes. El rubro se elige solo por el concepto; lo podés cambiar al editar el gasto.</p></section>`; })()}
     ${lista('Durante el viaje', gs.filter(m => m.fase === 'viaje'), 'Lo que pagás con viáticos o con tarjeta durante el viaje.', `<button class="btn via" data-act="evaddfase" data-id="${e.id}" data-fase="viaje">+ Gasto del viaje</button>`)}
     ${lista('Antes del viaje', gs.filter(m => m.fase !== 'viaje'), 'Vuelos, reservas, seguro… Cuentan en tus meses como cualquier gasto.', `<button class="btn via" data-act="evaddfase" data-id="${e.id}" data-fase="pre">+ Gasto previo</button>`)}
     <section class="panel"><h2>Con quién</h2>
