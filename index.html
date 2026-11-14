@@ -2186,10 +2186,13 @@ function vCuentas(){
   <p class="note">Cada cuenta parte del saldo inicial que pusiste en Ajustes y suma lo que cargues. Las cuentas del día a día son las que mira "Te queda a fin de mes"; las de ahorro forman tu capital. Pasar plata del día a día a una cuenta de ahorro cuenta como ahorro del mes.</p>`;
 }
 
+// Período de Análisis: todo, un año, o los últimos 6 o 12 meses hasta este mes (sin importar el mes que estés mirando)
+const selAnalisis = all => S.anio === 'todos' ? all : /^u\d+$/.test(S.anio) ? all.filter(x => x.mk > addMes(hoyMes(), -(+S.anio.slice(1)))) : all.filter(x => x.mk.startsWith(S.anio));
+const nomPeriodo = () => S.anio === 'todos' ? 'todo el período' : /^u\d+$/.test(S.anio) ? `últimos ${S.anio.slice(1)} meses` : S.anio;
 function vAnalisis(){
   const all = serie();
   const anios = [...new Set(all.map(x => x.mk.slice(0,4)))];
-  const sel = S.anio === 'todos' ? all : all.filter(x => x.mk.startsWith(S.anio));
+  const sel = selAnalisis(all);
   const sum = k => sel.reduce((a,x) => a + (x[k]||0), 0);
   const ing = sum('ing'), sal = sum('salida'), aho = sum('ahorro');
   const tasa = ing ? aho/ing*100 : 0;
@@ -2214,7 +2217,7 @@ function vAnalisis(){
   const mc = S.cfg.monedaCapital && S.cfg.monedas.some(m => m.id === S.cfg.monedaCapital) ? S.cfg.monedaCapital : monP().id;
   const sim = esc(monLbl(monP().id));
   return `
-  <div class="top"><h1 style="font-size:22px">Análisis</h1><div class="chips fila">${ch('todos','Todo')}${anios.map(y => ch(y,y)).join('')}</div></div>
+  <div class="top"><h1 style="font-size:22px">Análisis</h1><div class="chips fila">${ch('u12','Últimos 12 meses')}${ch('u6','Últimos 6 meses')}${ch('todos','Todo')}${anios.map(y => ch(y,y)).join('')}</div></div>
   <div class="grid4">
     <div class="tile"><span class="label">Ingresos</span><span class="v num">${fmt(ing)}</span><span class="note num">${sel.length} ${sel.length === 1 ? 'mes' : 'meses'}</span></div>
     <div class="tile"><span class="label">Salidas</span><span class="v num">${fmt(sal)}</span><span class="note num">${fmt(sel.length?sal/sel.length:0)} por mes</span></div>
@@ -2225,7 +2228,7 @@ function vAnalisis(){
   <section class="panel"><h2>Salidas por mes frente a ingresos <span>${pct ? '% del ingreso' : sim}</span></h2>
     <div class="chartbox"><canvas id="ch1" aria-label="Barras apiladas de salidas por categoría y línea de ingresos"></canvas></div>
     <div class="legend">${usadas('todo').map(id => `<span><i style="background:${colCat(id)}"></i>${esc(nomCat(id))}</span>`).join('')}${tarSin >= 1 ? '<span><i style="background:var(--c-tarjeta)"></i>Tarjeta sin detalle</span>' : ''}<span><i style="background:var(--c-ing);height:3px"></i>${pct ? 'Ingresos = 100 %' : 'Ingresos'}</span></div>
-    <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${S.anio==='todos'?'todo el período':S.anio}</h3>
+    <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${nomPeriodo()}</h3>
     ${filasCats.length ? resumenBarras(filasCats) : '<p class="empty">Aparece cuando cargues tus primeros gastos.</p>'}
     <p class="note">Todos los gastos por categoría, también los de tarjeta: cada compra cuenta el mes en que pagás el resumen (y en cuotas, una por mes). ${tarSin >= 1 ? '"Tarjeta sin detalle" es lo que pagaste de tarjeta sin compras cargadas en la app, como intereses o cargos.' : ''}</p></section>
   <section class="panel"><h2>Gastos recurrentes frente a ingresos <span>${pct ? '% del ingreso' : sim}</span></h2>
@@ -2256,7 +2259,7 @@ const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).
 function dibujarGraficas(){
   if (!window.Chart) return;
   const all = serie();
-  const sel = S.anio === 'todos' ? all : all.filter(x => x.mk.startsWith(S.anio));
+  const sel = selAnalisis(all);
   const labels = sel.map(x => corto(x.mk));
   const grid = css('--line');
   const mc = S.cfg.monedaCapital && S.cfg.monedas.some(m => m.id === S.cfg.monedaCapital) ? S.cfg.monedaCapital : monP().id;
@@ -2290,7 +2293,7 @@ function dibujarGraficas(){
 
 // ---------- Reagrupar gastos: pasar de categoría muchos gastos de una vez, en todos los meses (los de la app y los de la planilla) ----------
 let RG = null;
-const RG_PALABRAS = 'viaje, viatico, booking, airbnb, hotel, hostel, pasaje, vuelo, free shop, freeshop, duty free, holafly, seguro de viaje, seguro viaje, pasaporte, buquebus, colonia express, museo, entradas';
+const RG_EJEMPLO = 'Ej.: viaje, hotel, pasaje, vuelo, museo';
 function rgBuscar(){
   const pal = RG.palabras.split(',').map(claveConcepto).filter(Boolean), out = [];
   if (!pal.length) return out;
@@ -2300,24 +2303,30 @@ function rgBuscar(){
   return out.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 }
 function abrirReagrupar(re){
-  if (!re) RG = {desde: CAT('Extras') ? 'Extras' : '', a: CAT('Viajes') ? 'Viajes' : '+Viajes', palabras:RG_PALABRAS, fuera:new Set()};
+  if (!re) RG = {desde:'', a:'+', nueva:'Viajes', palabras:'', fuera:new Set()};
   const lista = rgBuscar(), marcados = lista.filter(x => !RG.fuera.has(x.k)), total = marcados.reduce((a, x) => a + x.uyu, 0);
-  const destinos = (CAT('Viajes') ? [] : [['+Viajes', 'Nueva: Viajes']]).concat(CATS().map(c => [c.id, c.nombre]));
+  const destinos = [['+', 'Nueva']].concat(CATS().map(c => [c.id, c.nombre])), nombreA = RG.a === '+' ? (RG.nueva.trim() || 'categoría nueva') : nomCat(RG.a);
   $('#overlay').innerHTML = `<div class="scrim" data-act="close"><div class="sheet${re ? '' : ' anim'}" id="rgsheet" role="dialog" aria-modal="true" aria-label="Reagrupar gastos">
     <header><h3>Reagrupar gastos</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
     <p class="note" style="margin:0">Busca en todos los meses los gastos cuyo concepto tenga alguna de estas palabras, para pasarlos juntos a otra categoría. Destildá los que no correspondan.</p>
     <div class="field"><span class="label">Que hoy están en</span>${chipsFila('rg', 'desde', [['', 'Cualquier categoría']].concat(CATS().map(c => [c.id, c.nombre])), RG.desde)}</div>
-    <div class="field"><label for="rg-pal">Palabras (separadas por comas)</label><textarea class="inp" id="rg-pal" rows="3" style="resize:vertical">${esc(RG.palabras)}</textarea>
+    <div class="field"><label for="rg-pal">Palabras (separadas por comas)</label><textarea class="inp" id="rg-pal" rows="2" style="resize:vertical" placeholder="${RG_EJEMPLO}">${esc(RG.palabras)}</textarea>
       <div class="chips" style="margin-top:6px"><button type="button" class="btn" data-act="rgbuscar">Buscar</button></div></div>
-    <div class="field"><span class="label">Pasarlos a</span>${chipsFila('rg', 'a', destinos, RG.a)}</div>
-    <div class="list" style="max-height:44vh;overflow:auto">${lista.length ? lista.map(x => `<label class="check" style="padding:6px 0;border-bottom:1px solid var(--line)"><input type="checkbox" data-rgk="${esc(x.k)}" ${RG.fuera.has(x.k) ? '' : 'checked'}> <span style="flex:1"><strong>${esc(x.concepto)}</strong><br><small class="note">${x.mk ? esc(nombreMes(x.mk)) : dia(x.fecha) + ' ' + x.fecha.slice(0, 4)} · ${esc(nomCat(x.cat))}</small></span><span class="num">${fmt(x.uyu)}</span></label>`).join('') : '<p class="empty">No hay gastos con esas palabras.</p>'}</div>
-    <div class="actions"><span class="note num">${marcados.length} ${marcados.length === 1 ? 'gasto' : 'gastos'} · ${fmt(total)}</span><button type="button" class="btn primary" data-act="rgok" ${marcados.length ? '' : 'disabled'}>Pasar a ${esc(RG.a === '+Viajes' ? 'Viajes' : nomCat(RG.a))}</button></div></div></div>`;
+    <div class="field"><span class="label">Pasarlos a</span>${chipsFila('rg', 'a', destinos, RG.a)}
+      ${RG.a === '+' ? `<input class="inp" id="rg-nueva" style="margin-top:8px" value="${esc(RG.nueva)}" placeholder="Nombre de la categoría nueva" autocomplete="off" aria-label="Nombre de la categoría nueva">` : ''}</div>
+    <div class="list" style="max-height:44vh;overflow:auto">${!RG.palabras.trim() ? '<p class="empty">Escribí una o más palabras y tocá Buscar.</p>' : lista.length ? lista.map(x => `<label class="check" style="padding:6px 0;border-bottom:1px solid var(--line)"><input type="checkbox" data-rgk="${esc(x.k)}" ${RG.fuera.has(x.k) ? '' : 'checked'}> <span style="flex:1"><strong>${esc(x.concepto)}</strong><br><small class="note">${x.mk ? esc(nombreMes(x.mk)) : dia(x.fecha) + ' ' + x.fecha.slice(0, 4)} · ${esc(nomCat(x.cat))}</small></span><span class="num">${fmt(x.uyu)}</span></label>`).join('') : '<p class="empty">No hay gastos con esas palabras.</p>'}</div>
+    <div class="actions"><span class="note num">${marcados.length} ${marcados.length === 1 ? 'gasto' : 'gastos'} · ${fmt(total)}</span><button type="button" class="btn primary" data-act="rgok" ${marcados.length ? '' : 'disabled'}>Pasar a ${esc(nombreA)}</button></div></div></div>`;
 }
 async function aplicarReagrupar(btn){
   const lista = rgBuscar().filter(x => !RG.fuera.has(x.k)); if (!lista.length) return;
   btn.disabled = true; btn.textContent = 'Pasando…';
   let a = RG.a;
-  if (a === '+Viajes'){ const cats = CATS().map(c => ({...c})); cats.push({id:'Viajes', nombre:'Viajes', color: colorDistinto('#b0600c', cats), dia:false}); if (!(await guardarCfg({cats}))) return; a = 'Viajes'; }
+  if (a === '+'){ // categoría nueva (si ya hay una con ese nombre, se usa esa)
+    const nom = ($('#rg-nueva')?.value ?? RG.nueva).trim(); if (!nom){ toast('Escribí el nombre de la categoría nueva'); btn.disabled = false; btn.textContent = 'Pasar'; return; }
+    const sinT = t => String(t).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''), ya = CATS().find(c => sinT(c.nombre) === sinT(nom));
+    if (ya) a = ya.id;
+    else { const cats = CATS().map(c => ({...c})); let id = nom; while (cats.some(c => c.id === id)) id += '·'; cats.push({id, nombre:nom, color: colorDistinto('#b0600c', cats), dia:false}); if (!(await guardarCfg({cats}))) return; a = id; }
+  }
   const porMes = {};
   for (const x of lista){
     if (x.k.startsWith('m:')) await S.db.collection(COL.movs).doc(x.k.slice(2)).update({cat:a});
@@ -3603,7 +3612,7 @@ document.addEventListener('click', async ev => {
     else if (k === 'invdel') V.invitados = V.invitados.filter(g => g.id !== v);
     else V[k] = v;
     abrirEvento(null, true); return; }
-  if (t.dataset.rg !== undefined && RG){ RG.palabras = $('#rg-pal')?.value ?? RG.palabras; RG[t.dataset.rg] = t.dataset.v; if (t.dataset.rg === 'desde') RG.fuera = new Set(); abrirReagrupar(true); return; }
+  if (t.dataset.rg !== undefined && RG){ RG.palabras = $('#rg-pal')?.value ?? RG.palabras; RG.nueva = $('#rg-nueva')?.value ?? RG.nueva; RG[t.dataset.rg] = t.dataset.v; if (t.dataset.rg === 'desde') RG.fuera = new Set(); abrirReagrupar(true); return; }
   if (t.dataset.vc && VC){ leerVC(); VC[t.dataset.vc] = t.dataset.v; VC.falta = null; abrirViatico(EV(VC.ev), null, null, true); return; }
   if (t.dataset.lq && LQ){ LQ.cuenta = t.dataset.v; abrirLiq(EV(LQ.ev), null, null, null, true); return; }
   if (t.dataset.f && F){
@@ -3665,7 +3674,7 @@ document.addEventListener('click', async ev => {
   if (a && (a.startsWith('ev') || a.startsWith('vc')) || a === 'vinv' || a === 'navev'){ if (await accionEventos(a, t)) return; }
   if (a === 'catnew'){ abrirCat(null); return; }
   if (a === 'rgabrir'){ abrirReagrupar(); return; }
-  if (a === 'rgbuscar' && RG){ RG.palabras = $('#rg-pal').value; RG.fuera = new Set(); abrirReagrupar(true); return; }
+  if (a === 'rgbuscar' && RG){ RG.palabras = $('#rg-pal').value; RG.nueva = $('#rg-nueva')?.value ?? RG.nueva; RG.fuera = new Set(); abrirReagrupar(true); return; }
   if (a === 'rgok' && RG){ await aplicarReagrupar(t); return; }
   if (a === 'subnew'){ abrirSub(null); return; }
   if (a === 'subedit'){ const x = SUB(t.dataset.id); if (x) abrirSub(x); return; }
@@ -3826,6 +3835,7 @@ document.addEventListener('change', ev => {
     abrirHoja(true); return;
   } if (ev.target.id === 'imp-file' && ev.target.files && ev.target.files[0]) leerCopia(ev.target.files[0]); });
 document.addEventListener('input', ev => {
+  if (ev.target.id === 'rg-nueva' && RG){ RG.nueva = ev.target.value; const b = $('[data-act="rgok"]'); if (b) b.textContent = 'Pasar a ' + (RG.nueva.trim() || 'categoría nueva'); return; }
   if (ev.target.id === 'f-monto') actualizarConv();
   if (ev.target.id === 'e-monto' && E) updEv();
   if (F && F.split && (ev.target.id === 'f-pt-rng' || ev.target.dataset.parte)){
