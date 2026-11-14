@@ -2032,7 +2032,7 @@ function pasaFiltro(m, f){
   if (f === 'rec') return esRec(m) || m.virtual === 'plant' && m.tipo === 'gasto';
   return m.tipo === f;
 }
-const FILTRO_LBL = f => f.startsWith('ev:') ? (EV(f.slice(3))?.nombre || 'Viaje') : f.startsWith('persona:') ? nomPer(f.slice(8)) : f.startsWith('cat:') ? nomCat(f.slice(4)) : f.startsWith('tarjeta:') ? nomTj(f.slice(8)) : f.startsWith('cuenta:') ? nomCta(f.slice(7)) : ({eventos:'Viajes y salidas', salidas:'Salidas', pend:'Pendientes', mover:'Transferencias', rec:'Recurrentes'}[f] || f);
+const FILTRO_LBL = f => f.startsWith('ev:') ? (EV(f.slice(3))?.nombre || 'Viaje') : f.startsWith('persona:') ? nomPer(f.slice(8)) : f.startsWith('cat:') ? nomCat(f.slice(4)) : f.startsWith('tarjeta:') ? nomTj(f.slice(8)) : f.startsWith('cuenta:') ? nomCta(f.slice(7)) : ({eventos:'Viajes y salidas', salidas:'Salidas', pend:'Pendientes', mover:'Transferencias', rec:'Recurrentes', ingreso:'Ingresos', gasto:'Todos los gastos', pago:'Pagos tarjeta', tarjeta:'Tarjetas'}[f] || f);
 function accionFila(x){
   const m = x.m;
   if (m.virtual === 'plant') return `data-act="plantform" data-id="${m.pid}"`;
@@ -2126,12 +2126,27 @@ function vPersona(pid){
 // Los filtros de Movimientos se combinan: uno por fila (Ver, Gastos, Tarjetas, Cuentas, Personas). S.filtro los guarda separados por "|"
 const grupoFiltro = k => k === 'gasto' || k.startsWith('cat:') ? 'gasto' : k.startsWith('tarjeta') ? 'tarjeta' : k.startsWith('cuenta:') ? 'cuenta' : k.startsWith('persona:') ? 'persona' : 'ver';
 const filtrosDe = f => !f || f === 'todo' ? [] : f.split('|').filter(Boolean);
+// Qué clase de movimientos deja pasar cada filtro: ing = ingreso, gc = gasto con cuenta, gt = gasto con tarjeta, pago = pago de tarjeta, mov = transferencia.
+// Dos filtros se pueden sumar si comparten alguna clase (ej. Alimentación + OCA); si no (ej. Alimentación + Ingresos), el nuevo saca al otro.
+const TODAS_CLASES = ['ing','gc','gt','pago','mov'];
+const clasesFiltro = k => k === 'ingreso' ? ['ing'] : k === 'salidas' ? ['gc','gt','pago'] : k === 'mover' ? ['mov'] : k === 'pago' ? ['pago']
+  : k === 'rec' || k === 'gasto' || k.startsWith('cat:') ? ['gc','gt'] : k === 'tarjeta' ? ['gt'] : k.startsWith('tarjeta:') ? ['gt','pago']
+  : k.startsWith('cuenta:') ? ['ing','gc','pago','mov'] : TODAS_CLASES; // viajes, personas y pendientes: de todo
 function tocarFiltro(k){
   let fs = filtrosDe(S.filtro);
   if (k === 'todo') fs = [];
   else if (fs.includes(k)) fs = fs.filter(x => x !== k); // tocar uno pintado lo saca
-  else if (grupoFiltro(k) === 'ver') fs = [k]; // Ver empieza de nuevo
-  else fs = fs.filter(x => grupoFiltro(x) !== grupoFiltro(k)).concat([k]); // en las otras filas se suma, uno por fila
+  else {
+    // uno por fila: reemplaza al de su fila; de las otras filas quedan solo los que combinan con el nuevo
+    let clases = clasesFiltro(k); const quedan = [], quitados = [];
+    for (const x of fs){
+      if (grupoFiltro(x) === grupoFiltro(k)) continue;
+      const juntas = clases.filter(c => clasesFiltro(x).includes(c));
+      if (juntas.length){ quedan.push(x); clases = juntas; } else quitados.push(x);
+    }
+    fs = quedan.concat([k]);
+    if (quitados.length) toast(`Se quitó ${quitados.map(FILTRO_LBL).join(' y ')}: no se puede combinar con ${FILTRO_LBL(k)}`);
+  }
   S.filtro = fs.join('|') || 'todo';
 }
 function vMovs(){
