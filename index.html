@@ -1950,7 +1950,9 @@ function vInicio(){
   const mesSig = MESES[+addMes(mk,1).slice(5)-1].toLowerCase();
   const pagoPend = pend.filter(p => p.kind === 'est' || (p.kind === 'mov' && p.m.tipo === 'pago')).reduce((a,p)=>a+p.uyu,0);
   const hayCambio = cuentasDia().some(c => c.monedas.length > 1);
-  const catTiles = CATS().map((c, i) => ({c, v: r.cats[c.id] || 0, i})).sort((a,b) => b.v - a.v || a.i - b.i).map(({c, v}) => tile(c.nombre, v, colCat(c.id), '', 'cat:'+c.id)).join(''); // de mayor a menor gasto
+  // Cada categoría con lo pagado con cuenta y las compras con tarjeta del resumen que se paga este mes
+  const conTj = {}; for (const x of itemsDelMes(addMes(mk, -1))){ const m = x.m; if (m.tipo === 'gasto' && isCard(m) && m.estado !== 'omitido' && !(m.split && m.split.modo === 'prestado')) conTj[m.cat] = (conTj[m.cat] || 0) + x.uyu; }
+  const catTiles = CATS().map((c, i) => ({c, v: (r.cats[c.id] || 0) + (conTj[c.id] || 0), t: conTj[c.id] || 0, i})).sort((a,b) => b.v - a.v || a.i - b.i).map(({c, v, t}) => tile(c.nombre, v, colCat(c.id), t >= 1 ? `${Math.abs(v - t) < 1 ? 'todo' : fmt(t)} con tarjeta` : '', 'cat:'+c.id)).join(''); // de mayor a menor gasto
   return `
   <div class="top sticky">${monthNav()}</div>
   ${bienvenida()}
@@ -1966,7 +1968,7 @@ function vInicio(){
   ${tarjetaViajes()}
   <div class="grid4">
     ${catTiles}
-    ${listaTj.length ? tile('Pago tarjetas', r.pagos + pagoPend, '--c-tarjeta', `resumen de ${MESES[+addMes(mk,-1).slice(5)-1].toLowerCase()}${pagoPend ? ` · falta ${fmt(pagoPend)}` : ' · pagado'}`, 'pago') : ''}
+    ${listaTj.length ? tile('Pago tarjetas', r.pagos + pagoPend, '--c-tarjeta', `resumen de ${MESES[+addMes(mk,-1).slice(5)-1].toLowerCase()}${pagoPend ? ` · falta ${fmt(pagoPend)}` : ' · pagado'} · ya está en cada categoría`, 'pago') : ''}
   </div>
   ${listaTj.length ? `<section class="panel"><h2>Tarjetas <span>se pagan en ${mesSig} · no restan de este mes</span></h2>
     <div class="tablewrap"><table class="tj"><thead><tr><th>Tarjeta</th><th class="r">Gasto total</th><th class="r">A pagar en ${mesSig}</th></tr></thead><tbody>
@@ -1994,7 +1996,7 @@ function pasaFiltro(m, f){
   if (f.startsWith('persona:')) return conPersona(m, f.slice(8));
   if (f.startsWith('cuenta:')){ const id = f.slice(7); return m.cuenta === id || m.de === id || m.a === id; }
   if (f === 'gasto') return m.tipo === 'gasto' && !card;
-  if (f.startsWith('cat:')) return m.tipo === 'gasto' && !card && m.cat === f.slice(4);
+  if (f.startsWith('cat:')) return m.tipo === 'gasto' && m.cat === f.slice(4); // también lo de tarjeta, en el mes en que se paga
   if (f === 'salidas') return m.tipo === 'gasto' || m.tipo === 'pago'; // también las compras con tarjeta (se listan en el mes en que se pagan; el neto no las suma dos veces)
   if (f === 'pend') return m.estado === 'pend';
   if (f === 'rec') return esRec(m) || m.virtual === 'plant' && m.tipo === 'gasto';
@@ -2110,7 +2112,7 @@ function vMovs(){
   const items = filtrar(todos.filter(x => x.m.estado !== 'pend'));
   const pend = filtrar(todos.filter(x => x.m.estado === 'pend').concat(pendientesComoFilas(mk)));
   const balP = pid ? balanceMes(pid, mk) : 0, nomP = pid ? esc(nomPer(pid)) : '';
-  const neto = x => { const m = x.m; if (isCard(m) || m.viatico) return 0; const r = {ing:0, gastos:0, pagos:0, ahorro:0, tarjeta:0, ingP:0, salP:0, ahoP:0, tarP:0, ext:0, extP:0, cats:{}}; sumar(r, m, x.uyu, false); return r.ing - r.gastos - r.pagos - r.ahorro + r.ext; };
+  const neto = x => { const m = x.m; if (isCard(m) && f.startsWith('cat:') && m.tipo === 'gasto') return -x.uyu; if (isCard(m) || m.viatico) return 0; const r = {ing:0, gastos:0, pagos:0, ahorro:0, tarjeta:0, ingP:0, salP:0, ahoP:0, tarP:0, ext:0, extP:0, cats:{}}; sumar(r, m, x.uyu, false); return r.ing - r.gastos - r.pagos - r.ahorro + r.ext; };
   const tot = items.reduce((a,x) => a + neto(x), 0);
   const totPend = pend.reduce((a,x) => a + x.uyu, 0);
   const ch = (k, l) => `<button class="chip" data-act="filtro" data-f="${k}" aria-pressed="${S.filtro===k}">${esc(l)}</button>`;
