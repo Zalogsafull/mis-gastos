@@ -2639,7 +2639,10 @@ function usoMedio(){ const c = {}; for (const m of S.movs) if (m.tipo === 'gasto
 const porUso = (opts, uso) => opts.map((o, i) => [o, i]).sort((a, b) => (uso[b[0][0]] || 0) - (uso[a[0][0]] || 0) || a[1] - b[1]).map(x => x[0]);
 const chipsFila = (...a) => chipsDe(...a);
 // Que lo elegido quede a la vista en las filas que se deslizan
-function mostrarElegidos(root){ (root || document).querySelectorAll('.chips.fila').forEach(f => { const el = f.querySelector('[aria-pressed="true"]'); if (el && (el.offsetLeft + el.offsetWidth > f.scrollLeft + f.clientWidth - 24 || el.offsetLeft < f.scrollLeft)) f.scrollLeft = el.offsetLeft - 24; }); }
+// Corre cada fila de chips para que se vea el elegido. La posición se mide dentro de la fila (no desde la página, que suma el rótulo de la izquierda y lo escondía)
+function mostrarElegidos(root){ (root || document).querySelectorAll('.chips.fila').forEach(f => { const el = f.querySelector('[aria-pressed="true"]'); if (!el) return;
+  const izq = el.getBoundingClientRect().left - f.getBoundingClientRect().left + f.scrollLeft, der = izq + el.offsetWidth;
+  if (izq < f.scrollLeft + 24 || der > f.scrollLeft + f.clientWidth - 32) f.scrollLeft = Math.max(0, izq - 24); }); }
 const chipsDe = (attr, k, opts, val) => `<div class="chips fila">${opts.map(([v,l]) => `<button type="button" class="chip" data-${attr}="${k}" data-v="${esc(v)}" aria-pressed="${val===v}">${esc(l)}</button>`).join('')}</div>`;
 function abrirHoja(re){
   const sug = sugerencias();
