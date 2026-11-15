@@ -934,7 +934,6 @@ function uiMes(mk){
 const monCap = () => S.cfg.monedaCapital && S.cfg.monedas.some(m => m.id === S.cfg.monedaCapital) ? S.cfg.monedaCapital : monP().id;
 function serie(){
   const out = [], tplR = idxRec(); let mk = primerMes(); const hasta = hoyMes(), mc = monCap();
-  const tasaMc = mk => mc === 'USD' && mk < inicio() ? (+S.plan[mk]?.tc || tasaDe('USD')) : (tasaEnMes(mc, mk) || 1);
   while (mk <= hasta){
     const r = resumen(mk);
     let capMc = null;
@@ -943,15 +942,9 @@ function serie(){
     const G = gastosMes(mk, tplR);
     const tarSin = Math.max(0, r.pagos - G.tarPag); // pagos de tarjeta sin compras cargadas (intereses, cargos o compras que no están en la app)
     const ext = itemsDelMes(mk).reduce((a, x) => a + (x.m.tipo === 'ingreso' && x.m.extra && x.m.estado === 'pagado' && !x.m.compensado && !pagoOtro(x.m) ? x.uyu : 0), 0); // ingresos que no se repiten
-    out.push({mk, cats:{...r.cats}, todo:G.todo, rec:G.rec, tar:G.tar, tarSin, pagos:r.pagos, salida:r.salida, ahorro:r.ahorro, ing:r.ing, ext, capMc, tmc: tasaMc(mk), aporteMc: r.ahorro / tasaMc(mk)});
+    out.push({mk, cats:{...r.cats}, todo:G.todo, rec:G.rec, tar:G.tar, tarSin, pagos:r.pagos, salida:r.salida, ahorro:r.ahorro, ing:r.ing, ext, capMc});
     mk = addMes(mk, 1);
   }
-  // Deuda de tarjetas al cierre de cada mes: el resumen que se paga el mes siguiente (lo que se pagó; en el mes en curso, también lo que falta pagar)
-  const estHoy = pendientes(hasta).filter(p => p.kind === 'est').reduce((a, p) => a + p.uyu, 0);
-  out.forEach((x, i) => {
-    const sig = out[i + 1], deuda = !sig ? tarjetaDelMes(x.mk) + estHoy : sig.mk === hasta ? sig.pagos + estHoy : sig.pagos;
-    x.deudaMc = deuda / x.tmc; x.netoMc = x.capMc == null ? null : x.capMc - x.deudaMc;
-  });
   return out;
 }
 const claveConcepto = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s*\*\s*\d+\s*$/,'').replace(/\s+\d+\s*\/\s*\d+\s*$/,'').replace(/\s+/g,' ').trim();
@@ -2253,17 +2246,6 @@ function vAnalisis(){
   const G1 = gruposChart(sel, 'todo', 'ch1'), G4 = gruposChart(sel, 'rec', 'ch4'), G5 = gruposChart(sel, 'tar', 'ch5');
   const notaCurso = enCurso ? `<p class="note" style="margin:6px 0 0">* ${esc(nombreMes(hoyMes()))} está en curso: se ve en las gráficas, pero no entra en los totales, los promedios ni la tasa.</p>` : '';
   const extras = sel.filter(x => x.ext >= 1);
-  // Patrimonio: cómo cambió en el período y por qué
-  const conCap = sel.filter(x => x.netoMc != null), pIni = conCap.length ? crudo[crudo.findIndex(x => x.mk === conCap[0].mk) - 1] : null;
-  const desg = (() => {
-    if (conCap.length < 2 && !(conCap.length && pIni && pIni.netoMc != null)) return '';
-    const base = pIni && pIni.netoMc != null ? pIni : conCap[0], desde = base === pIni ? conCap : conCap.slice(1), fin = conCap[conCap.length - 1];
-    const aporte = desde.reduce((a, x) => a + crudo.find(y => y.mk === x.mk).aporteMc, 0), dDeuda = -(fin.deudaMc - base.deudaMc), cambio = fin.netoMc - base.netoMc, otros = cambio - aporte - dDeuda;
-    const f = v => (v >= 0 ? '+ ' : '− ') + fmtEn(Math.round(Math.abs(v)), mc);
-    const fila = (t, m, v, b) => `<div class="row"><div class="t">${b ? `<strong>${t}</strong>` : t}</div>${m ? `<div class="m">${m}</div>` : ''}<div class="a num">${b ? `<strong>${f(v)}</strong>` : f(v)}</div></div>`;
-    return `<div class="list" style="margin-top:10px">${fila('Cambio desde ' + esc(corto(base.mk)), '', cambio, true)}${fila('A tus cuentas de ahorro', 'lo que pasaste menos lo que sacaste', aporte)}${fila('Deuda de tarjetas', dDeuda >= 0 ? 'bajó' : 'subió', dDeuda)}${fila('Dólar, UI, intereses y lo no registrado', 'lo que cambió sin un movimiento cargado', otros)}</div>`;
-  })();
-  const cuotasFut = (() => { let t = 0; for (let k = 1; k <= 48; k++) t += tarjetaDelMes(addMes(hoyMes(), k)); return t; })();
   return `
   <div class="top antop"><h1 style="font-size:22px">Análisis</h1><div class="chips fila">${ch('todos','Todo')}${anios.map(y => ch(y,y)).join('')}${ch('u12','Últimos 12 meses')}${ch('u6','Últimos 6 meses')}</div></div>
   <div class="grid4">
@@ -2298,13 +2280,9 @@ function vAnalisis(){
       <p class="note num">${Object.entries(abiertas.porTj).map(([t, v]) => `${esc(nomTj(t))} ${fmt(v)}`).join(' · ')}</p>` : ''}
     <p class="note">Cada compra cuenta el mes en que pagás el resumen, en cuotas si corresponde.</p></section>
   <div class="cols">
-    <section class="panel"><h2>Ahorro por mes <span>${real ? sim + ' de hoy' : sim}</span></h2><div class="chartbox"><canvas id="ch2" aria-label="Ahorro por mes"></canvas></div>
-      <div class="legend"><span><i style="background:var(--c-ahorro)"></i>Ingresos − salidas</span><span><i style="background:var(--accent-soft);border:1px solid var(--accent)"></i>A cuentas de ahorro</span></div>
-      <p class="note">Lo que no gastaste cada mes, y cuánto de eso pasaste a tus cuentas de ahorro (el resto quedó en la cuenta del día a día).</p></section>
-    <section class="panel"><h2>Patrimonio <span>${esc(monLbl(mc))}</span></h2><div class="chartbox"><canvas id="ch3" aria-label="Patrimonio por mes"></canvas></div>
-      <div class="legend"><span><i style="background:var(--accent)"></i>Patrimonio neto</span><span><i style="background:var(--muted);height:2px"></i>Cuentas de ahorro</span></div>
-      <p class="note">Patrimonio neto: tus cuentas de ahorro al cierre de cada mes menos lo que debés en tarjetas (el resumen que se paga el mes siguiente).${cuotasFut >= 1 ? ` Además tenés ${fmt(cuotasFut)} en cuotas que se pagan más adelante.` : ''}</p>
-      ${desg}</section>
+    <section class="panel"><h2>Ahorro mensual <span>${sim}</span></h2><div class="chartbox"><canvas id="ch2" aria-label="Ahorro por mes"></canvas></div></section>
+    <section class="panel"><h2>Capital <span>${esc(monLbl(mc))}</span></h2><div class="chartbox"><canvas id="ch3" aria-label="Capital por mes"></canvas></div>
+      <p class="note">Suma de tus cuentas de ahorro al cierre de cada mes.</p></section>
   </div>
   <section class="panel"><h2>Por año <span>${real ? sim + ' de hoy' : sim}</span></h2><div class="tablewrap"><table><thead><tr><th>Año</th><th class="r">Meses</th><th class="r">Ingresos</th>${CATS().map(c => `<th class="r">${esc(c.nombre)}</th>`).join('')}<th class="r">Tarjeta sin detalle</th><th class="r">Ahorro</th><th class="r">Tasa</th></tr></thead>
     <tbody>${porAnio.map(a => `<tr class="ro"><td>${a.y}</td><td class="r num">${a.n}</td><td class="r num">${fmt(a.ing)}</td>${CATS().map(c => `<td class="r num">${fmt(a.cats[c.id])}</td>`).join('')}<td class="r num">${fmt(a.tarSin)}</td><td class="r num">${fmt(a.aho)}</td><td class="r num">${a.tasa.toFixed(1)} %</td></tr>`).join('')}</tbody></table></div>
@@ -2348,12 +2326,8 @@ function dibujarGraficas(){
   if (c1) charts.push(new Chart(c1, {data:{labels, datasets: serieBarras(gruposChart(sel, 'todo', 'ch1'))}, options: optsIng()}));
   if (c4) charts.push(new Chart(c4, {data:{labels, datasets: serieBarras(gruposChart(sel, 'rec', 'ch4'))}, options: optsIng()}));
   if (c5) charts.push(new Chart(c5, {data:{labels, datasets: serieBarras(gruposChart(sel, 'tar', 'ch5'))}, options: optsIng()}));
-  if (c2) charts.push(new Chart(c2, {type:'bar', data:{labels, datasets:[
-    {label:'Ingresos − salidas', data:sel.map(x => x.ing - x.salida), backgroundColor:css('--c-ahorro'), borderRadius:3},
-    {label:'A cuentas de ahorro', data:sel.map(x => x.ahorro), backgroundColor:css('--accent-soft'), borderColor:css('--accent'), borderWidth:1, borderRadius:3}]}, options: base(false, false)}));
-  if (c3) charts.push(new Chart(c3, {type:'line', data:{labels: selCap.map(x => etiquetaMes(x.mk)), datasets:[
-    {label:'Patrimonio neto', data:selCap.map(x => x.netoMc), borderColor:css('--accent'), backgroundColor:css('--accent-soft'), fill:true, borderWidth:2, pointRadius: selCap.length < 3 ? 3 : 0, pointHoverRadius:4, tension:.25},
-    {label:'Cuentas de ahorro', data:selCap.map(x => x.capMc), borderColor:css('--muted'), borderWidth:1.5, borderDash:[4, 3], pointRadius:0, pointHoverRadius:3, tension:.25, fill:false}]}, options: base(true, false)}));
+  if (c2) charts.push(new Chart(c2, {type:'bar', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Ahorro', data:selCap.map(x=>x.ahorro), backgroundColor:css('--c-ahorro'), borderRadius:3}]}, options: base(false, false)}));
+  if (c3) charts.push(new Chart(c3, {type:'line', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Capital', data:selCap.map(x=>x.capMc), borderColor:css('--accent'), backgroundColor:css('--accent-soft'), fill:true, borderWidth:2, pointRadius: selCap.length < 3 ? 3 : 0, pointHoverRadius:4, tension:.25}]}, options: base(true, false)}));
 }
 
 // ---------- Reagrupar gastos: pasar de categoría muchos gastos de una vez, en todos los meses (los de la app y los de la planilla) ----------
