@@ -1123,14 +1123,20 @@ function verAgregar(o){
   const nuevos = o.items.filter(x => x && x.mk && x.item && !ya.has(x.item.imp)), sinMes = nuevos.filter(x => !S.plan[x.mk]);
   // Los que ya estaban pero el archivo trae con otra categoría: se corrige solo la categoría
   const cambios = o.items.filter(x => x && x.mk && x.item && ya.has(x.item.imp) && x.item.tipo !== 'ingreso' && ((S.plan[x.mk] || {}).items || []).some(it => it.imp === x.item.imp && it.cat !== x.item.cat));
-  AGR = {o, nuevos: nuevos.filter(x => S.plan[x.mk]), cambios};
+  // Correcciones por nombre (ítems de la planilla sin marca, o un gasto recurrente y lo ya registrado con él)
+  const clave = t => claveConcepto(t || '');
+  const corr = (o.corregir || []).flatMap(c => {
+    if (c.donde === 'planilla'){ const p = S.plan[c.mk]; return p ? (p.items || []).map((it, i) => ({c, mk:c.mk, i, it})).filter(x => clave(x.it.concepto) === clave(c.concepto) && x.it.tipo === c.tipo && x.it.cat !== c.cat).map(x => ({...x, txt:`${x.it.concepto} (${nombreMes(c.mk)})`})) : []; }
+    if (c.donde === 'recurrente') return S.plant.filter(p => clave(p.nombre) === clave(c.nombre) && p.tipo === c.tipo && p.cat !== c.cat).map(p => ({c, plant:p, txt:`${p.nombre} (gasto recurrente)`}));
+    return []; });
+  AGR = {o, nuevos: nuevos.filter(x => S.plan[x.mk]), cambios, corr};
   const porMes = {}; for (const x of AGR.nuevos) (porMes[x.mk] = porMes[x.mk] || []).push(x.item);
   const v = it => `${it.tipo === 'ingreso' ? '+' : '−'} ${esc(monLbl(it.moneda))} ${Math.round(it.monto).toLocaleString('es-UY')}`;
   $('#overlay').innerHTML = `<div class="scrim" data-act="close"><div class="sheet anim" role="dialog" aria-modal="true" aria-label="Agregar movimientos">
     <header><h3>${esc(o.titulo || 'Agregar movimientos')}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
-    <p class="note" style="margin:0">Se agregan ${AGR.nuevos.length} movimientos a los meses de la planilla. ${cambios.length ? 'No se borra nada.' : 'No se borra ni se cambia nada de lo que ya tenés.'}${o.items.length - nuevos.length ? ` ${o.items.length - nuevos.length} ya estaban y no se repiten.` : ''}${cambios.length ? ` A ${cambios.length} que ya estaban se les corrige la categoría (${cambios.map(x => esc(x.item.concepto) + ' → ' + esc(nomCat(x.item.cat) || x.item.cat)).join(', ')}).` : ''}${sinMes.length ? ` ${sinMes.length} son de meses que no están en tu planilla y quedan afuera.` : ''}</p>
-    <div class="list">${Object.keys(porMes).sort().map(mk => `<div class="row"><div class="t">${esc(nombreMes(mk))}</div><div class="m">${porMes[mk].map(it => `${esc(it.concepto)} ${v(it)}`).join(' · ')}</div></div>`).join('') || (cambios.length ? '' : '<p class="empty">No hay nada nuevo para agregar.</p>')}</div>
-    <div class="actions"><button type="button" class="btn ghost" data-act="close">Cancelar</button>${AGR.nuevos.length || cambios.length ? `<button type="button" class="btn primary" data-act="agrok">${AGR.nuevos.length ? 'Agregar' : 'Corregir'}</button>` : ''}</div>
+    <p class="note" style="margin:0">Se agregan ${AGR.nuevos.length} movimientos a los meses de la planilla. ${cambios.length + corr.length ? 'No se borra nada.' : 'No se borra ni se cambia nada de lo que ya tenés.'}${o.items.length - nuevos.length ? ` ${o.items.length - nuevos.length} ya estaban y no se repiten.` : ''}${cambios.length + corr.length ? ` Se corrige la categoría de ${cambios.length + corr.length} que ya estaban: ${cambios.map(x => esc(x.item.concepto) + ' → ' + esc(nomCat(x.item.cat) || x.item.cat)).concat(corr.map(x => esc(x.txt) + ' → ' + esc(nomCat(x.c.cat) || x.c.cat))).join(', ')}.` : ''}${sinMes.length ? ` ${sinMes.length} son de meses que no están en tu planilla y quedan afuera.` : ''}</p>
+    <div class="list">${Object.keys(porMes).sort().map(mk => `<div class="row"><div class="t">${esc(nombreMes(mk))}</div><div class="m">${porMes[mk].map(it => `${esc(it.concepto)} ${v(it)}`).join(' · ')}</div></div>`).join('') || (cambios.length + corr.length ? '' : '<p class="empty">No hay nada nuevo para agregar.</p>')}</div>
+    <div class="actions"><button type="button" class="btn ghost" data-act="close">Cancelar</button>${AGR.nuevos.length || cambios.length || corr.length ? `<button type="button" class="btn primary" data-act="agrok">${AGR.nuevos.length ? 'Agregar' : 'Corregir'}</button>` : ''}</div>
   </div></div>`;
 }
 async function aplicarAgregar(btn){
@@ -1141,11 +1147,18 @@ async function aplicarAgregar(btn){
     if (faltan.length){ const cats = CATS().map(c => ({...c})); for (const c of faltan) cats.push({id:c.id, nombre:c.nombre || c.id, color: colorDistinto(c.color || '#3d7a8a', cats), dia: !!c.dia, ...(c.inv ? {inv:true} : {})}); if (!(await guardarCfg({cats}))) throw new Error('No se pudo crear la categoría'); }
     const porMes = {}; for (const x of AGR.nuevos) (porMes[x.mk] = porMes[x.mk] || []).push(x.item);
     for (const x of AGR.cambios) porMes[x.mk] = porMes[x.mk] || [];
+    for (const x of AGR.corr) if (x.mk) porMes[x.mk] = porMes[x.mk] || [];
+    const corrPl = {}; for (const x of AGR.corr) if (x.mk && CAT(x.c.cat)) corrPl[x.mk + ':' + x.i] = x.c.cat;
     const nuevaCat = {}; for (const x of AGR.cambios) nuevaCat[x.item.imp] = CAT(x.item.cat) ? x.item.cat : null;
     for (const [mk, its] of Object.entries(porMes)){
       const p = S.plan[mk], tc = +p.tc || tasaDe('USD');
-      const items = (p.items || []).map(it => it.imp && nuevaCat[it.imp] ? {...it, cat: nuevaCat[it.imp]} : it).concat(its.map(it => ({...it, cat: it.tipo === 'ingreso' ? it.cat : (CAT(it.cat) ? it.cat : catDefecto()), ...(it.moneda === 'USD' && !it.tc ? {tc} : {})})));
+      const items = (p.items || []).map((it, i) => it.imp && nuevaCat[it.imp] ? {...it, cat: nuevaCat[it.imp]} : corrPl[mk + ':' + i] ? {...it, cat: corrPl[mk + ':' + i]} : it).concat(its.map(it => ({...it, cat: it.tipo === 'ingreso' ? it.cat : (CAT(it.cat) ? it.cat : catDefecto()), ...(it.moneda === 'USD' && !it.tc ? {tc} : {})})));
       await S.db.collection('planilla').doc(mk).set({...p, items});
+    }
+    // Gasto recurrente: la plantilla y lo ya registrado con ella
+    for (const x of AGR.corr) if (x.plant && CAT(x.c.cat)){
+      await S.db.collection(COL.plant).doc(x.plant.id).update({cat:x.c.cat});
+      for (const m of S.movs.filter(m => m.plantilla === x.plant.id && m.tipo === 'gasto' && m.cat !== x.c.cat)) await S.db.collection(COL.movs).doc(m.id).update({cat:x.c.cat});
     }
     toast(AGR.nuevos.length ? `Se agregaron ${AGR.nuevos.length} movimientos` : 'Categorías corregidas'); AGR = null; cerrar(); render();
   } catch(e){ registrarError('Agregar movimientos a la planilla', e, 'No se pudieron agregar. Probá de nuevo.'); btn.disabled = false; btn.textContent = 'Agregar'; }
@@ -2248,8 +2261,7 @@ function gruposChart(sel, k, ch){
   const cand = ids.map(id => ({id, nombre:nomCat(id), col:colCat(id), colR:() => colCatRes(id), v: x => x[k][id] || 0}));
   if (k !== 'rec' && sel.some(x => x.tarSin >= 1)) cand.push({id:'_sin', nombre: k === 'tar' ? 'Sin detalle' : 'Tarjeta sin detalle', col:'var(--c-tarjeta)', colR:() => css('--c-tarjeta'), v: x => x.tarSin});
   cand.forEach(c => c.total = sel.reduce((a, x) => a + c.v(x), 0)); cand.sort((a, b) => b.total - a.total);
-  let grupos = cand;
-  if (k === 'todo' && cand.length > 7){ const resto = cand.slice(6); grupos = cand.slice(0, 6).concat([{id:'_otras', nombre:'Otras', col:'var(--c-otras)', colR:() => css('--c-otras'), v: x => resto.reduce((a, c) => a + c.v(x), 0), resto: resto.map(c => c.nombre)}]); }
+  const grupos = cand; // todas las categorías, cada una se puede elegir sola
   const elegido = (S.anSolo || {})[ch], solo = elegido ? grupos.concat(cand).find(c => c.id === elegido) : null;
   return {grupos, series: solo ? [solo] : grupos, solo};
 }
@@ -2273,7 +2285,7 @@ function vAnalisis(){
   const tot = (k, id) => selC.reduce((a, x) => a + (x[k][id] || 0), 0);
   const tarSin = sum('tarSin');
   // Promedio por mes y parte del ingreso, para leer el período de un vistazo (tocando una fila de la primera gráfica se ve esa categoría sola)
-  const resumenBarras = (filas, toca) => { const max = Math.max(1, ...filas.map(f => f.v)); return `<div class="bars">${filas.map(f => `<div class="bar${toca ? ' click' : ''}"${toca ? ` data-act="ansolo" data-id="${esc(f.id)}" role="button" tabindex="0" aria-pressed="${(S.anSolo || {}).ch1 === f.id}"${(S.anSolo || {}).ch1 && (S.anSolo || {}).ch1 !== f.id ? ' style="opacity:.45"' : ''}` : ''}><span class="bn">${esc(f.nombre)}<small>${ing ? (f.v * n / ing * 100).toFixed(1) + ' % del ingreso' : ''}</small></span><span class="bt"><i style="width:${(f.v/max*100).toFixed(1)}%;background:${f.col}"></i></span><span class="bv num">${fmt(f.v)}<small style="display:block;font-weight:400;color:var(--muted);font-size:11px">por mes</small></span></div>`).join('')}</div>`; };
+  const resumenBarras = (filas, toca) => { const max = Math.max(1, ...filas.map(f => f.v)); return `<div class="bars">${filas.map(f => `<div class="bar${toca ? ' click' : ''}"${toca ? ` data-act="ansolo" data-id="${esc(f.id)}" role="button" tabindex="0" aria-pressed="${(S.anSolo || {}).ch1 === f.id}"${(S.anSolo || {}).ch1 && (S.anSolo || {}).ch1 !== f.id ? ' style="opacity:.45"' : ''}` : ''}><span class="bn">${esc(f.nombre)}<small>${toca && ing ? (f.v * n / ing * 100).toFixed(1) + ' % del ingreso' : ''}</small></span><span class="bt"><i style="width:${(f.v/max*100).toFixed(1)}%;background:${f.col}"></i></span><span class="bv num">${fmt(f.v)}<small style="display:block;font-weight:400;color:var(--muted);font-size:11px">por mes</small></span></div>`).join('')}</div>`; };
   const filasCats = usadas('todo').map(id => ({id, nombre:nomCat(id), col:colCat(id), v: tot('todo', id) / n})).concat(tarSin >= 1 ? [{id:'_sin', nombre:'Tarjeta sin detalle', col:'var(--c-tarjeta)', v: tarSin / n}] : []).filter(f => f.v > 0).sort((a,b) => b.v - a.v);
   const filasRec = usadas('rec').map(id => ({nombre:nomCat(id), col:colCat(id), v: tot('rec', id) / n})).sort((a,b) => b.v - a.v);
   const totRec = filasRec.reduce((a,f) => a + f.v, 0);
@@ -2294,8 +2306,8 @@ function vAnalisis(){
   <div class="grid4">
     <div class="tile"><span class="label">Ingresos</span><span class="v num">${fmt(ing)}</span><span class="note num">${selC.length} ${selC.length === 1 ? 'mes' : 'meses'}${ext >= 1 ? ` · ${fmt(ext)} extra` : ''}</span></div>
     <div class="tile"><span class="label">Salidas</span><span class="v num">${fmt(sal)}</span><span class="note num">${fmt(sal / n)} por mes</span></div>
-    <div class="tile"><span class="label">Ahorro</span><span class="v num">${fmt(queda)}</span><span class="note num">ingresos − salidas · ${fmt(aho)} a cuentas de ahorro</span></div>
-    <div class="tile"><span class="label">Tasa de ahorro</span><span class="v num">${tasa.toFixed(1)} %</span><span class="note">${ext >= 1 ? `sin los extras: ${tasaHab.toFixed(1)} %` : 'de lo que ingresó, lo que no gastaste'}</span></div>
+    <div class="tile"><span class="label">Ahorro</span><span class="v num">${fmt(Math.max(0, queda))}</span><span class="note num">ingresos − salidas · ${fmt(aho)} a cuentas de ahorro</span></div>
+    <div class="tile"><span class="label">Tasa de ahorro</span><span class="v num">${Math.max(0, tasa).toFixed(1)} %</span><span class="note">${ext >= 1 ? `sin los extras: ${tasaHab.toFixed(1)} %` : 'de lo que ingresó, lo que no gastaste'}</span></div>
   </div>
   ${notaCurso}
   <div class="filters" style="align-items:center;flex-wrap:wrap"><span class="note">Ver las gráficas en</span><div class="chips">${vch('monto', sim + ' por mes')}${hayUI() ? vch('real', sim + ' de hoy') : ''}${vch('pct','% del ingreso')}</div></div>
@@ -2307,16 +2319,16 @@ function vAnalisis(){
     <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${nomPeriodo()}${real ? ' · en pesos de hoy' : ''}</h3>
     ${filasCats.length ? resumenBarras(filasCats, true) : '<p class="empty">Aparece cuando cargues tus primeros gastos.</p>'}
     <p class="note">Tocá una categoría (acá o en las referencias de cada gráfica) para verla sola y compararla mes a mes. Cuenta lo que salió de tu bolsillo, también lo de tarjeta: cada compra cuenta el mes en que pagás el resumen (y en cuotas, una por mes). Lo que pagó otra persona no entra. ${tarSin >= 1 ? '"Tarjeta sin detalle" es lo que pagaste de tarjeta sin compras cargadas en la app, como intereses o cargos.' : ''}</p></section>
-  <section class="panel"><h2>Gastos recurrentes frente a ingresos <span>${unidad}</span></h2>
-    <div class="chartbox"><canvas id="ch4" aria-label="Barras apiladas de gastos recurrentes por categoría y línea de ingresos"></canvas></div>
-    <div class="legend">${leyenda(G4, 'ch4', legIng)}</div>
-    <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${fmt(totRec)}${ing ? ` · ${(totRec * n / ing * 100).toFixed(1)} % del ingreso` : ''}</h3>
+  <section class="panel"><h2>Gastos recurrentes <span>${real ? sim + ' de hoy' : sim}</span></h2>
+    <div class="chartbox"><canvas id="ch4" aria-label="Barras apiladas de gastos recurrentes por categoría"></canvas></div>
+    <div class="legend">${leyenda(G4, 'ch4', '')}</div>
+    <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${fmt(totRec)}</h3>
     ${filasRec.length ? resumenBarras(filasRec) : '<p class="empty">Aparece cuando tengas gastos recurrentes.</p>'}
     <p class="note">Es una parte de la gráfica de arriba: los gastos de todos los meses (Ajustes → Gastos recurrentes), pagados con cuenta o con tarjeta.</p></section>
-  <section class="panel"><h2>Pagos con tarjeta <span>${unidad}</span></h2>
+  <section class="panel"><h2>Pagos con tarjeta <span>${real ? sim + ' de hoy' : sim}</span></h2>
     <div class="chartbox"><canvas id="ch5" aria-label="Barras apiladas de compras con tarjeta por categoría, en el mes en que se pagan"></canvas></div>
-    <div class="legend">${leyenda(G5, 'ch5', legIng)}</div>
-    <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${fmt(totTar)}${ing ? ` · ${(totTar * n / ing * 100).toFixed(1)} % del ingreso` : ''}</h3>
+    <div class="legend">${leyenda(G5, 'ch5', '')}</div>
+    <h3 class="label" style="margin:16px 0 6px">Promedio por mes · ${fmt(totTar)}</h3>
     ${filasTar.length ? resumenBarras(filasTar) : '<p class="empty">Aparece cuando pagues compras con tarjeta.</p>'}
     ${abiertas.total >= 1 ? `<h3 class="label" style="margin:16px 0 6px">Lo que venís cargando a la tarjeta · se paga el mes que viene · ${fmt(abiertas.total)}</h3>
       <div class="bars">${Object.entries(abiertas.cats).sort((a, b) => b[1] - a[1]).map(([id, v]) => `<div class="bar"><span class="bn">${esc(nomCat(id))}</span><span class="bt"><i style="width:${(v / Math.max(...Object.values(abiertas.cats)) * 100).toFixed(1)}%;background:${colCat(id)}"></i></span><span class="bv num">${fmt(v)}</span></div>`).join('')}</div>
@@ -2331,7 +2343,7 @@ function vAnalisis(){
     <div class="legend"><span><i style="background:var(--c-inv)"></i>Invertido en el mes</span><span><i style="background:var(--accent);height:2px"></i>Total invertido</span></div>
     <p class="note">Lo que cargás en la categoría Inversiones (por ejemplo, el apartamento). No cuenta como gasto ni baja el ahorro del mes. Total invertido hasta hoy: ${fmtEn(Math.round(crudo.reduce((a, x) => a + (x.invMc || 0), 0)), mc)}.</p></section>` : ''}
   <section class="panel"><h2>Por año <span>${real ? sim + ' de hoy' : sim}</span></h2><div class="tablewrap"><table><thead><tr><th>Año</th><th class="r">Meses</th><th class="r">Ingresos</th>${CATS().filter(c => !esInv(c.id)).map(c => `<th class="r">${esc(c.nombre)}</th>`).join('')}<th class="r">Tarjeta sin detalle</th><th class="r">Ahorro</th><th class="r">Tasa</th></tr></thead>
-    <tbody>${porAnio.map(a => `<tr class="ro"><td>${a.y}</td><td class="r num">${a.n}</td><td class="r num">${fmt(a.ing)}</td>${CATS().filter(c => !esInv(c.id)).map(c => `<td class="r num">${fmt(a.cats[c.id])}</td>`).join('')}<td class="r num">${fmt(a.tarSin)}</td><td class="r num">${fmt(a.aho)}</td><td class="r num">${a.tasa.toFixed(1)} %</td></tr>`).join('')}</tbody></table></div>
+    <tbody>${porAnio.map(a => `<tr class="ro"><td>${a.y}</td><td class="r num">${a.n}</td><td class="r num">${fmt(a.ing)}</td>${CATS().filter(c => !esInv(c.id)).map(c => `<td class="r num">${fmt(a.cats[c.id])}</td>`).join('')}<td class="r num">${fmt(a.tarSin)}</td><td class="r num">${fmt(Math.max(0, a.aho))}</td><td class="r num">${Math.max(0, a.tasa).toFixed(1)} %</td></tr>`).join('')}</tbody></table></div>
     <p class="note">Meses cerrados. Las compras con tarjeta van en su categoría, el mes en que pagás el resumen. Ahorro = ingresos − salidas.</p></section>`;
 }
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -2370,9 +2382,11 @@ function dibujarGraficas(){
   const serieBarras = G => G.series.map(g => ({type:'bar', label:g.nombre, data:sel.map(x => P_(g.v(x), x)), backgroundColor:g.colR(), stack:'s', borderRadius:2})).concat(G.solo ? [] : [lineaIng()]); // sola: sin la línea, la escala se ajusta a esa serie
   const c1 = $('#ch1'), c2 = $('#ch2'), c3 = $('#ch3'), c4 = $('#ch4'), c5 = $('#ch5');
   if (c1) charts.push(new Chart(c1, {data:{labels, datasets: serieBarras(gruposChart(sel, 'todo', 'ch1'))}, options: optsIng()}));
-  if (c4) charts.push(new Chart(c4, {data:{labels, datasets: serieBarras(gruposChart(sel, 'rec', 'ch4'))}, options: optsIng()}));
-  if (c5) charts.push(new Chart(c5, {data:{labels, datasets: serieBarras(gruposChart(sel, 'tar', 'ch5'))}, options: optsIng()}));
-  if (c2) charts.push(new Chart(c2, {type:'bar', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Ahorro', data:selCap.map(x=>x.ahorro), backgroundColor:css('--c-ahorro'), borderRadius:3}]}, options: base(false, false)}));
+  // Recurrentes y tarjeta: solo lo que son, en pesos (sin comparar con ingresos)
+  const soloBarras = G => G.series.map(g => ({type:'bar', label:g.nombre, data:sel.map(x => g.v(x)), backgroundColor:g.colR(), stack:'s', borderRadius:2}));
+  if (c4) charts.push(new Chart(c4, {data:{labels, datasets: soloBarras(gruposChart(sel, 'rec', 'ch4'))}, options: base(false, true)}));
+  if (c5) charts.push(new Chart(c5, {data:{labels, datasets: soloBarras(gruposChart(sel, 'tar', 'ch5'))}, options: base(false, true)}));
+  if (c2) charts.push(new Chart(c2, {type:'bar', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Ahorro', data:selCap.map(x => Math.max(0, x.ahorro)), backgroundColor:css('--c-ahorro'), borderRadius:3}]}, options: base(false, false)}));
   if (c3) charts.push(new Chart(c3, {type:'line', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Capital', data:selCap.map(x=>x.capMc), borderColor:css('--accent'), backgroundColor:css('--accent-soft'), fill:true, borderWidth:2, pointRadius: selCap.length < 3 ? 3 : 0, pointHoverRadius:4, tension:.25}]}, options: base(true, false)}));
   // Inversiones: barra con lo invertido en cada mes y escalón con el total acumulado (que no vuelve a cero)
   const c6 = $('#ch6');
