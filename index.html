@@ -850,6 +850,9 @@ function sumar(r, m, v, pend){
   else if (m.tipo === 'pago'){ pend ? r.salP += v : r.pagos += v; if (!esDia(m.cuenta)) pend ? r.ahoP -= v : r.ahorro -= v; }
   else if (m.tipo === 'gasto'){
     if (isCard(m)){ pend ? r.tarP += v : r.tarjeta += v; return; }
+    // Inversión (por ejemplo, el apartamento): no es gasto del mes ni baja el ahorro. Desde una cuenta de ahorro queda todo igual;
+    // desde el día a día cuenta como plata que pasaste a ahorro/inversión.
+    if (esInv(m.cat)){ if (pend){ if (esDia(m.cuenta)) r.ahoP += v; } else { r.cats[m.cat] = (r.cats[m.cat]||0) + v; r.inv = (r.inv||0) + v; if (esDia(m.cuenta)) r.ahorro += v; } return; }
     if (pend) r.salP += v; else { if (!(m.split && m.split.modo === 'prestado')) r.cats[m.cat] = (r.cats[m.cat]||0) + v; r.gastos += v; } // lo prestado sale de tu plata pero no es gasto tuyo: no suma a la categoría
     if (!esDia(m.cuenta)) pend ? r.ahoP -= v : r.ahorro -= v;
   }
@@ -944,9 +947,9 @@ function serie(){
     const G = gastosMes(mk, tplR);
     const tarSin = Math.max(0, r.pagos - G.tarPag); // pagos de tarjeta sin compras cargadas (intereses, cargos o compras que no están en la app)
     // Inversiones pagadas desde tus cuentas: no son gasto del mes ni bajan el ahorro del mes; se dibujan aparte
-    let inv = 0, invAho = 0; for (const x of itemsDelMes(mk)){ const m = x.m; if (m.tipo === 'gasto' && esInv(m.cat) && !isCard(m) && !pagoOtro(m) && !m.compensado && m.estado === 'pagado'){ inv += x.uyu; if (!esDia(m.cuenta)) invAho += x.uyu; } }
+    const inv = r.inv || 0; // inversiones del mes (resumen ya no las cuenta como gasto ni les baja el ahorro)
     const ext = itemsDelMes(mk).reduce((a, x) => a + (x.m.tipo === 'ingreso' && x.m.extra && x.m.estado === 'pagado' && !x.m.compensado && !pagoOtro(x.m) ? x.uyu : 0), 0); // ingresos que no se repiten
-    out.push({mk, cats:{...r.cats}, todo:G.todo, rec:G.rec, tar:G.tar, tarSin, pagos:r.pagos, salida:r.salida - inv, ahorro:r.ahorro + invAho, ing:r.ing, ext, inv, invMc: inv / (tasaEnMes(mc, mk) || 1), capMc});
+    out.push({mk, cats:{...r.cats}, todo:G.todo, rec:G.rec, tar:G.tar, tarSin, pagos:r.pagos, salida:r.salida, ahorro:r.ahorro, ing:r.ing, ext, inv, invMc: inv / (tasaEnMes(mc, mk) || 1), capMc});
     mk = addMes(mk, 1);
   }
   return out;
@@ -1118,14 +1121,16 @@ let AGR = null;
 function verAgregar(o){
   const ya = new Set(Object.values(S.plan).flatMap(p => (p.items || []).map(it => it.imp).filter(Boolean)));
   const nuevos = o.items.filter(x => x && x.mk && x.item && !ya.has(x.item.imp)), sinMes = nuevos.filter(x => !S.plan[x.mk]);
-  AGR = {o, nuevos: nuevos.filter(x => S.plan[x.mk])};
+  // Los que ya estaban pero el archivo trae con otra categoría: se corrige solo la categoría
+  const cambios = o.items.filter(x => x && x.mk && x.item && ya.has(x.item.imp) && x.item.tipo !== 'ingreso' && ((S.plan[x.mk] || {}).items || []).some(it => it.imp === x.item.imp && it.cat !== x.item.cat));
+  AGR = {o, nuevos: nuevos.filter(x => S.plan[x.mk]), cambios};
   const porMes = {}; for (const x of AGR.nuevos) (porMes[x.mk] = porMes[x.mk] || []).push(x.item);
   const v = it => `${it.tipo === 'ingreso' ? '+' : '−'} ${esc(monLbl(it.moneda))} ${Math.round(it.monto).toLocaleString('es-UY')}`;
   $('#overlay').innerHTML = `<div class="scrim" data-act="close"><div class="sheet anim" role="dialog" aria-modal="true" aria-label="Agregar movimientos">
     <header><h3>${esc(o.titulo || 'Agregar movimientos')}</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
-    <p class="note" style="margin:0">Se agregan ${AGR.nuevos.length} movimientos a los meses de la planilla. No se borra ni se cambia nada de lo que ya tenés.${o.items.length - nuevos.length ? ` ${o.items.length - nuevos.length} ya estaban y no se repiten.` : ''}${sinMes.length ? ` ${sinMes.length} son de meses que no están en tu planilla y quedan afuera.` : ''}</p>
-    <div class="list">${Object.keys(porMes).sort().map(mk => `<div class="row"><div class="t">${esc(nombreMes(mk))}</div><div class="m">${porMes[mk].map(it => `${esc(it.concepto)} ${v(it)}`).join(' · ')}</div></div>`).join('') || '<p class="empty">No hay nada nuevo para agregar.</p>'}</div>
-    <div class="actions"><button type="button" class="btn ghost" data-act="close">Cancelar</button>${AGR.nuevos.length ? '<button type="button" class="btn primary" data-act="agrok">Agregar</button>' : ''}</div>
+    <p class="note" style="margin:0">Se agregan ${AGR.nuevos.length} movimientos a los meses de la planilla. ${cambios.length ? 'No se borra nada.' : 'No se borra ni se cambia nada de lo que ya tenés.'}${o.items.length - nuevos.length ? ` ${o.items.length - nuevos.length} ya estaban y no se repiten.` : ''}${cambios.length ? ` A ${cambios.length} que ya estaban se les corrige la categoría (${cambios.map(x => esc(x.item.concepto) + ' → ' + esc(nomCat(x.item.cat) || x.item.cat)).join(', ')}).` : ''}${sinMes.length ? ` ${sinMes.length} son de meses que no están en tu planilla y quedan afuera.` : ''}</p>
+    <div class="list">${Object.keys(porMes).sort().map(mk => `<div class="row"><div class="t">${esc(nombreMes(mk))}</div><div class="m">${porMes[mk].map(it => `${esc(it.concepto)} ${v(it)}`).join(' · ')}</div></div>`).join('') || (cambios.length ? '' : '<p class="empty">No hay nada nuevo para agregar.</p>')}</div>
+    <div class="actions"><button type="button" class="btn ghost" data-act="close">Cancelar</button>${AGR.nuevos.length || cambios.length ? `<button type="button" class="btn primary" data-act="agrok">${AGR.nuevos.length ? 'Agregar' : 'Corregir'}</button>` : ''}</div>
   </div></div>`;
 }
 async function aplicarAgregar(btn){
@@ -1135,12 +1140,14 @@ async function aplicarAgregar(btn){
     const faltan = (AGR.o.cats || []).filter(c => c && c.id && !CAT(c.id));
     if (faltan.length){ const cats = CATS().map(c => ({...c})); for (const c of faltan) cats.push({id:c.id, nombre:c.nombre || c.id, color: colorDistinto(c.color || '#3d7a8a', cats), dia: !!c.dia, ...(c.inv ? {inv:true} : {})}); if (!(await guardarCfg({cats}))) throw new Error('No se pudo crear la categoría'); }
     const porMes = {}; for (const x of AGR.nuevos) (porMes[x.mk] = porMes[x.mk] || []).push(x.item);
+    for (const x of AGR.cambios) porMes[x.mk] = porMes[x.mk] || [];
+    const nuevaCat = {}; for (const x of AGR.cambios) nuevaCat[x.item.imp] = CAT(x.item.cat) ? x.item.cat : null;
     for (const [mk, its] of Object.entries(porMes)){
       const p = S.plan[mk], tc = +p.tc || tasaDe('USD');
-      const items = (p.items || []).concat(its.map(it => ({...it, cat: it.tipo === 'ingreso' ? it.cat : (CAT(it.cat) ? it.cat : catDefecto()), ...(it.moneda === 'USD' && !it.tc ? {tc} : {})})));
+      const items = (p.items || []).map(it => it.imp && nuevaCat[it.imp] ? {...it, cat: nuevaCat[it.imp]} : it).concat(its.map(it => ({...it, cat: it.tipo === 'ingreso' ? it.cat : (CAT(it.cat) ? it.cat : catDefecto()), ...(it.moneda === 'USD' && !it.tc ? {tc} : {})})));
       await S.db.collection('planilla').doc(mk).set({...p, items});
     }
-    toast(`Se agregaron ${AGR.nuevos.length} movimientos`); AGR = null; cerrar(); render();
+    toast(AGR.nuevos.length ? `Se agregaron ${AGR.nuevos.length} movimientos` : 'Categorías corregidas'); AGR = null; cerrar(); render();
   } catch(e){ registrarError('Agregar movimientos a la planilla', e, 'No se pudieron agregar. Probá de nuevo.'); btn.disabled = false; btn.textContent = 'Agregar'; }
 }
 // Pasar de la cuenta de Claude a este dispositivo (o al revés). Si el destino está vacío, copia los datos.
