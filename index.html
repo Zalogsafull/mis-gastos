@@ -2315,12 +2315,13 @@ function vAnalisis(){
       <p class="note num">${Object.entries(abiertas.porTj).map(([t, v]) => `${esc(nomTj(t))} ${fmt(v)}`).join(' · ')}</p>` : ''}
     <p class="note">Cada compra cuenta el mes en que pagás el resumen, en cuotas si corresponde.</p></section>
   <div class="cols">
-    <section class="panel"><h2>Ahorro mensual <span>${sim}</span></h2><div class="chartbox"><canvas id="ch2" aria-label="Ahorro por mes"></canvas></div>
-      ${sel.some(x => x.inv >= 1) ? `<div class="legend"><span><i style="background:var(--c-ahorro)"></i>Ahorro</span><span><i style="background:var(--c-inv)"></i>Inversiones (escala a la derecha)</span></div><p class="note">Las inversiones no se restan del ahorro del mes ni cuentan como gasto.</p>` : ''}</section>
+    <section class="panel"><h2>Ahorro mensual <span>${sim}</span></h2><div class="chartbox"><canvas id="ch2" aria-label="Ahorro por mes"></canvas></div></section>
     <section class="panel"><h2>Capital <span>${esc(monLbl(mc))}</span></h2><div class="chartbox"><canvas id="ch3" aria-label="Capital por mes"></canvas></div>
-      ${crudo.some(x => x.inv >= 1) ? `<div class="legend"><span><i style="background:var(--accent)"></i>Capital</span><span><i style="background:var(--c-inv)"></i>Capital + inversiones</span></div>` : ''}
-      <p class="note">Suma de tus cuentas de ahorro al cierre de cada mes.${crudo.some(x => x.inv >= 1) ? ' La línea punteada le suma lo que invertiste (por ejemplo, en el apartamento).' : ''}</p></section>
+      <p class="note">Suma de tus cuentas de ahorro al cierre de cada mes.</p></section>
   </div>
+  ${crudo.some(x => x.inv >= 1) ? `<section class="panel"><h2>Inversiones <span>${esc(monLbl(mc))}</span></h2><div class="chartbox" style="height:200px"><canvas id="ch6" aria-label="Inversiones por mes y acumulado"></canvas></div>
+    <div class="legend"><span><i style="background:var(--c-inv)"></i>Invertido en el mes</span><span><i style="background:var(--accent);height:2px"></i>Total invertido</span></div>
+    <p class="note">Lo que cargás en la categoría Inversiones (por ejemplo, el apartamento). No cuenta como gasto ni baja el ahorro del mes. Total invertido hasta hoy: ${fmtEn(Math.round(crudo.reduce((a, x) => a + (x.invMc || 0), 0)), mc)}.</p></section>` : ''}
   <section class="panel"><h2>Por año <span>${real ? sim + ' de hoy' : sim}</span></h2><div class="tablewrap"><table><thead><tr><th>Año</th><th class="r">Meses</th><th class="r">Ingresos</th>${CATS().filter(c => !esInv(c.id)).map(c => `<th class="r">${esc(c.nombre)}</th>`).join('')}<th class="r">Tarjeta sin detalle</th><th class="r">Ahorro</th><th class="r">Tasa</th></tr></thead>
     <tbody>${porAnio.map(a => `<tr class="ro"><td>${a.y}</td><td class="r num">${a.n}</td><td class="r num">${fmt(a.ing)}</td>${CATS().filter(c => !esInv(c.id)).map(c => `<td class="r num">${fmt(a.cats[c.id])}</td>`).join('')}<td class="r num">${fmt(a.tarSin)}</td><td class="r num">${fmt(a.aho)}</td><td class="r num">${a.tasa.toFixed(1)} %</td></tr>`).join('')}</tbody></table></div>
     <p class="note">Meses cerrados. Las compras con tarjeta van en su categoría, el mes en que pagás el resumen. Ahorro = ingresos − salidas.</p></section>`;
@@ -2363,12 +2364,14 @@ function dibujarGraficas(){
   if (c1) charts.push(new Chart(c1, {data:{labels, datasets: serieBarras(gruposChart(sel, 'todo', 'ch1'))}, options: optsIng()}));
   if (c4) charts.push(new Chart(c4, {data:{labels, datasets: serieBarras(gruposChart(sel, 'rec', 'ch4'))}, options: optsIng()}));
   if (c5) charts.push(new Chart(c5, {data:{labels, datasets: serieBarras(gruposChart(sel, 'tar', 'ch5'))}, options: optsIng()}));
-  // Inversiones: línea sobre el ahorro de cada mes, y sobre el capital lo invertido acumulado (para ver el capital sin el bache de la compra)
-  const hayInv = selCap.some(x => x.inv >= 1); let acum = 0; const invAcum = {}; for (const x of crudo){ acum += x.invMc || 0; invAcum[x.mk] = acum; }
-  const lineaInv = (data, label) => ({type:'line', label, data, borderColor:css('--c-inv'), backgroundColor:css('--c-inv'), borderWidth:2, pointRadius:3, pointHoverRadius:5, tension:.25, fill:false});
-  if (c2) charts.push(new Chart(c2, {data:{labels: selCap.map(x => corto(x.mk)), datasets:[{type:'bar', label:'Ahorro', data:selCap.map(x=>x.ahorro), backgroundColor:css('--c-ahorro'), borderRadius:3}].concat(hayInv ? [{...lineaInv(selCap.map(x => x.inv || 0), 'Inversiones'), yAxisID:'y2', tension:0, pointRadius:selCap.map(x => x.inv >= 1 ? 3 : 0)}] : [])}, options: (() => { const o = base(false, false); if (hayInv) o.scales.y2 = {position:'right', beginAtZero:true, grid:{display:false}, border:{display:false}, ticks:{color:css('--c-inv'), callback:money}}; return o; })()}));
-  if (c3) charts.push(new Chart(c3, {type:'line', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Capital', data:selCap.map(x=>x.capMc), borderColor:css('--accent'), backgroundColor:css('--accent-soft'), fill:true, borderWidth:2, pointRadius: selCap.length < 3 ? 3 : 0, pointHoverRadius:4, tension:.25}]
-    .concat(Object.values(invAcum).some(v => v >= 1) ? [{...lineaInv(selCap.map(x => x.capMc == null ? null : x.capMc + invAcum[x.mk]), 'Capital + inversiones'), pointRadius:0, borderDash:[5, 4]}] : [])}, options: base(true, false)}));
+  if (c2) charts.push(new Chart(c2, {type:'bar', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Ahorro', data:selCap.map(x=>x.ahorro), backgroundColor:css('--c-ahorro'), borderRadius:3}]}, options: base(false, false)}));
+  if (c3) charts.push(new Chart(c3, {type:'line', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Capital', data:selCap.map(x=>x.capMc), borderColor:css('--accent'), backgroundColor:css('--accent-soft'), fill:true, borderWidth:2, pointRadius: selCap.length < 3 ? 3 : 0, pointHoverRadius:4, tension:.25}]}, options: base(true, false)}));
+  // Inversiones: barra con lo invertido en cada mes y escalón con el total acumulado (que no vuelve a cero)
+  const c6 = $('#ch6');
+  if (c6){ let acum = 0; const tot = {}; for (const x of crudo){ acum += x.invMc || 0; tot[x.mk] = acum; }
+    charts.push(new Chart(c6, {data:{labels: selCap.map(x => corto(x.mk)), datasets:[
+      {type:'bar', label:'Invertido en el mes', data:selCap.map(x => x.invMc || 0), backgroundColor:css('--c-inv'), borderRadius:3},
+      {type:'line', label:'Total invertido', data:selCap.map(x => tot[x.mk]), borderColor:css('--accent'), borderWidth:2, stepped:true, pointRadius:0, pointHoverRadius:4, fill:false}]}, options: base(true, false)})); }
 }
 
 // ---------- Reagrupar gastos: pasar de categoría muchos gastos de una vez, en todos los meses (los de la app y los de la planilla) ----------
