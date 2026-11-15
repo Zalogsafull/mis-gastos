@@ -2096,7 +2096,7 @@ function pasaFiltro(m, f){
   if (f.startsWith('cat:')) return m.tipo === 'gasto' && m.cat === f.slice(4); // también lo de tarjeta, en el mes en que se paga
   if (f === 'salidas') return m.tipo === 'gasto' || m.tipo === 'pago'; // también las compras con tarjeta (se listan en el mes en que se pagan; el neto no las suma dos veces)
   if (f === 'pend') return m.estado === 'pend';
-  if (f === 'ahorros'){ const aho = id => !!id && !!CTA(id) && !esDia(id); return m.tipo === 'mover' ? aho(m.de) || aho(m.a) : !card && aho(m.cuenta); } // lo que entra o sale de tus cuentas de ahorro
+  if (f === 'ahorros'){ const aho = id => !!id && !!CTA(id) && !esDia(id); return m.tipo === 'mover' ? aho(m.de) || aho(m.a) : m.tipo === 'ingreso' && aho(m.cuenta); } // depósitos, retiros e ingresos a tus cuentas de ahorro (los gastos pagados desde ahí no)
   if (f === 'rec') return esRec(m) || m.virtual === 'plant' && m.tipo === 'gasto';
   return m.tipo === f;
 }
@@ -2157,7 +2157,7 @@ const filtrosDe = f => !f || f === 'todo' ? [] : f.split('|').filter(Boolean);
 // Qué clase de movimientos deja pasar cada filtro: ing = ingreso, gc = gasto con cuenta, gt = gasto con tarjeta, pago = pago de tarjeta, mov = transferencia.
 // Dos filtros se pueden sumar si comparten alguna clase (ej. Alimentación + OCA); si no (ej. Alimentación + Ingresos), el nuevo saca al otro.
 const TODAS_CLASES = ['ing','gc','gt','pago','mov'];
-const clasesFiltro = k => k === 'ingreso' ? ['ing'] : k === 'salidas' ? ['gc','gt','pago'] : k === 'mover' ? ['mov'] : k === 'ahorros' ? ['ing','gc','pago','mov'] : k === 'pago' ? ['pago']
+const clasesFiltro = k => k === 'ingreso' ? ['ing'] : k === 'salidas' ? ['gc','gt','pago'] : k === 'mover' ? ['mov'] : k === 'ahorros' ? ['ing','mov'] : k === 'pago' ? ['pago']
   : k === 'rec' || k === 'gasto' || k.startsWith('cat:') ? ['gc','gt'] : k === 'tarjeta' ? ['gt'] : k.startsWith('tarjeta:') ? ['gt','pago']
   : k.startsWith('cuenta:') ? ['ing','gc','pago','mov'] : TODAS_CLASES; // viajes, personas y pendientes: de todo
 function tocarFiltro(k){
