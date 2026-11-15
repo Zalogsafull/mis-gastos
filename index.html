@@ -2067,10 +2067,11 @@ function pasaFiltro(m, f){
   if (f.startsWith('cat:')) return m.tipo === 'gasto' && m.cat === f.slice(4); // también lo de tarjeta, en el mes en que se paga
   if (f === 'salidas') return m.tipo === 'gasto' || m.tipo === 'pago'; // también las compras con tarjeta (se listan en el mes en que se pagan; el neto no las suma dos veces)
   if (f === 'pend') return m.estado === 'pend';
+  if (f === 'ahorros'){ const aho = id => !!id && !!CTA(id) && !esDia(id); return m.tipo === 'mover' ? aho(m.de) || aho(m.a) : !card && aho(m.cuenta); } // lo que entra o sale de tus cuentas de ahorro
   if (f === 'rec') return esRec(m) || m.virtual === 'plant' && m.tipo === 'gasto';
   return m.tipo === f;
 }
-const FILTRO_LBL = f => f.startsWith('ev:') ? (EV(f.slice(3))?.nombre || 'Viaje') : f.startsWith('persona:') ? nomPer(f.slice(8)) : f.startsWith('cat:') ? nomCat(f.slice(4)) : f.startsWith('tarjeta:') ? nomTj(f.slice(8)) : f.startsWith('cuenta:') ? nomCta(f.slice(7)) : ({eventos:'Viajes y salidas', salidas:'Salidas', pend:'Pendientes', mover:'Transferencias', rec:'Recurrentes', ingreso:'Ingresos', gasto:'Todos los gastos', pago:'Pagos tarjeta', tarjeta:'Tarjetas'}[f] || f);
+const FILTRO_LBL = f => f.startsWith('ev:') ? (EV(f.slice(3))?.nombre || 'Viaje') : f.startsWith('persona:') ? nomPer(f.slice(8)) : f.startsWith('cat:') ? nomCat(f.slice(4)) : f.startsWith('tarjeta:') ? nomTj(f.slice(8)) : f.startsWith('cuenta:') ? nomCta(f.slice(7)) : ({eventos:'Viajes y salidas', salidas:'Salidas', pend:'Pendientes', mover:'Transferencias', ahorros:'Ahorros', rec:'Recurrentes', ingreso:'Ingresos', gasto:'Todos los gastos', pago:'Pagos tarjeta', tarjeta:'Tarjetas'}[f] || f);
 function accionFila(x){
   const m = x.m;
   if (m.virtual === 'plant') return `data-act="plantform" data-id="${m.pid}"`;
@@ -2127,7 +2128,7 @@ const filtrosDe = f => !f || f === 'todo' ? [] : f.split('|').filter(Boolean);
 // Qué clase de movimientos deja pasar cada filtro: ing = ingreso, gc = gasto con cuenta, gt = gasto con tarjeta, pago = pago de tarjeta, mov = transferencia.
 // Dos filtros se pueden sumar si comparten alguna clase (ej. Alimentación + OCA); si no (ej. Alimentación + Ingresos), el nuevo saca al otro.
 const TODAS_CLASES = ['ing','gc','gt','pago','mov'];
-const clasesFiltro = k => k === 'ingreso' ? ['ing'] : k === 'salidas' ? ['gc','gt','pago'] : k === 'mover' ? ['mov'] : k === 'pago' ? ['pago']
+const clasesFiltro = k => k === 'ingreso' ? ['ing'] : k === 'salidas' ? ['gc','gt','pago'] : k === 'mover' ? ['mov'] : k === 'ahorros' ? ['ing','gc','pago','mov'] : k === 'pago' ? ['pago']
   : k === 'rec' || k === 'gasto' || k.startsWith('cat:') ? ['gc','gt'] : k === 'tarjeta' ? ['gt'] : k.startsWith('tarjeta:') ? ['gt','pago']
   : k.startsWith('cuenta:') ? ['ing','gc','pago','mov'] : TODAS_CLASES; // viajes, personas y pendientes: de todo
 function tocarFiltro(k){
@@ -2167,11 +2168,11 @@ function vMovs(){
   const items = filtrar(todos.filter(x => x.m.estado !== 'pend'));
   const pend = filtrar(todos.filter(x => x.m.estado === 'pend').concat(pendientesComoFilas(mk)));
   const balP = pid ? balanceMes(pid, mk) : 0, nomP = pid ? esc(nomPer(pid)) : '';
-  const neto = x => { const m = x.m; if (isCard(m) && conTarjeta && m.tipo === 'gasto') return -x.uyu; if (isCard(m) || m.viatico) return 0; const r = {ing:0, gastos:0, pagos:0, ahorro:0, tarjeta:0, ingP:0, salP:0, ahoP:0, tarP:0, ext:0, extP:0, cats:{}}; sumar(r, m, x.uyu, false); return r.ing - r.gastos - r.pagos - r.ahorro + r.ext; };
+  const neto = x => { const m = x.m; if (isCard(m) && conTarjeta && m.tipo === 'gasto') return -x.uyu; if (isCard(m) || m.viatico) return 0; const r = {ing:0, gastos:0, pagos:0, ahorro:0, tarjeta:0, ingP:0, salP:0, ahoP:0, tarP:0, ext:0, extP:0, cats:{}}; sumar(r, m, x.uyu, false); return f === 'ahorros' ? r.ahorro : r.ing - r.gastos - r.pagos - r.ahorro + r.ext; }; // con Ahorros: cuánto entró neto a tus cuentas de ahorro
   const tot = items.reduce((a,x) => a + neto(x), 0);
   const totPend = pend.reduce((a,x) => a + x.uyu, 0);
   const ch = (k, l) => `<button class="chip" data-act="filtro" data-f="${k}" aria-pressed="${k === 'todo' ? !fs.length : fs.includes(k)}">${esc(l)}</button>`;
-  const visibles = ['todo','ingreso','salidas','mover','rec','eventos','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id), PERS().map(x => 'persona:'+x.id));
+  const visibles = ['todo','ingreso','salidas','mover','ahorros','rec','eventos','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id), PERS().map(x => 'persona:'+x.id));
   const extraChip = fs.filter(k => !visibles.includes(k)).map(k => `<button class="chip" data-act="filtro" data-f="${esc(k)}" aria-pressed="true" aria-label="Quitar filtro ${esc(FILTRO_LBL(k))}">${esc(FILTRO_LBL(k))} ✕</button>`).join('');
   const fila = x => { const m = x.m, pos = esPositivo(m); return `<tr ${accionFila(x)}><td class="num">${m.virtual ? 'este mes' : dia(m.fecha)}</td><td>${esc(m.concepto||'')}${m.estado==='pend'?'<span class="pill pend">Pendiente</span>':''}</td><td>${esc(etiqueta(m))}</td><td>${esc(medioTxt(m))}</td><td class="num">${x.cuotas>1?`${x.cuota}/${x.cuotas}`:''}</td><td class="r num">${!esPpal(m.moneda)?fmtM(m):''}</td><td class="r num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</td><td class="note">${esc(x.ef || (m.virtual === 'plant' ? 'monto habitual' : m.nota||''))}</td></tr>`; };
   const tabla = list => `<div class="mobile-only list">${list.map(filaMov).join('')}</div>
@@ -2179,7 +2180,7 @@ function vMovs(){
   return `
   <div class="top sticky">${monthNav()}</div>
   <div class="filtros">
-    <span class="note">Ver</span><div class="chips fila">${extraChip}${ch('todo','Todo')}${ch('ingreso','Ingresos')}${ch('salidas','Salidas')}${ch('mover','Transferencias')}${ch('rec','Recurrentes')}${(S.evs || []).length || CAT('Viajes') ? ch('eventos','Viajes y salidas') : ''}${S.cfg.tarjetas.length ? ch('pago','Pagos tarjeta') : ''}</div>
+    <span class="note">Ver</span><div class="chips fila">${extraChip}${ch('todo','Todo')}${ch('ingreso','Ingresos')}${ch('salidas','Salidas')}${ch('mover','Transferencias')}${ch('ahorros','Ahorros')}${ch('rec','Recurrentes')}${(S.evs || []).length || CAT('Viajes') ? ch('eventos','Viajes y salidas') : ''}${S.cfg.tarjetas.length ? ch('pago','Pagos tarjeta') : ''}</div>
     <span class="note">Gastos</span><div class="chips fila">${ch('gasto','Todos los gastos')}${CATS().map(c => ch('cat:'+c.id, c.nombre)).join('')}</div>
     ${S.cfg.tarjetas.length ? `<span class="note">Tarjetas</span><div class="chips fila">${S.cfg.tarjetas.length > 1 ? ch('tarjeta','Todas') : ''}${S.cfg.tarjetas.map(t => ch('tarjeta:'+t.id, t.nombre)).join('')}</div>` : ''}
     <span class="note">Cuentas</span><div class="chips fila">${S.cfg.cuentas.map(c => ch('cuenta:'+c.id, c.nombre)).join('')}</div>
