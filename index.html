@@ -2175,15 +2175,12 @@ function barraSemanas(mk, saldoFin){
     const d1 = cortes[k] + 1, d2 = cortes[k+1], largo = d2 - d1 + 1;
     if (diaHoy < d1){ estados.push('sin empezar'); return `<span class="sem"></span>`; }
     // Lo que queda del mes al empezar esta semana, repartido entre los días que faltan (incluida esta semana)
+    const antes = suma(1, d1 - 1), quedaMes = Math.max(0, B - antes), semB = quedaMes * largo / (dias - d1 + 1);
     const hasta = Math.min(d2, diaHoy), gastado = suma(d1, hasta), terminada = hasta === d2;
-    // Semanas que ya pasaron: su parte de lo que quedaba del presupuesto. Semana en curso: lo que de verdad te queda a fin de mes
-    // (más lo que ya gastaste esta semana), repartido entre los días que faltan; en la última semana es todo lo que queda.
-    const antes = suma(1, d1 - 1), actual = !terminada && mk === hoyMk && saldoFin != null;
-    const quedaMes = actual ? Math.max(0, saldoFin + gastado) : Math.max(0, B - antes), semB = quedaMes * largo / (dias - d1 + 1);
     // Arranca en verde y pasa a rojo cuando lo gastado en la semana supera su presupuesto; al cerrar queda con el resultado final
     const tope = semB, bien = gastado <= tope + 1;
     estados.push(`${bien ? 'bien' : 'pasada'}: ${fmt(gastado)} de ${fmt(semB)}`);
-    if (!terminada){ const restoMes = actual ? saldoFin : B - antes - gastado;
+    if (!terminada){ const restoMes = B - antes - gastado;
       txt = `Semana ${k+1}: ${fmt(semB)} para esta semana · llevás ${fmt(gastado)}${gastado <= semB ? ` · te quedan ${fmt(semB - gastado)}` : ` · te pasaste ${fmt(gastado - semB)}`}${k < 3 ? ` · en el mes ${restoMes >= 0 ? `te quedan ${fmt(restoMes)}` : `te pasaste ${fmt(-restoMes)}`}` : ''}`; }
     const pct = ((hasta - d1 + 1) / largo * 100).toFixed(1);
     return `<span class="sem${terminada ? '' : ' encurso'}"><i class="${bien ? 'bien' : 'mal'}" style="width:${pct}%"></i></span>`;
@@ -2629,7 +2626,7 @@ function vAjustes(){
     <p class="note">Tocá una para cambiarle el nombre o el color, o para borrarla. Las marcadas <em>Día a día</em> cuentan en el presupuesto del día a día (sin contar los gastos recurrentes). Los gastos de todos los meses también usan estas categorías.</p></section>
   <section class="panel"><h2>Presupuesto del día a día</h2>
     <div class="filters"><div class="field" style="flex:1;min-width:0"><label for="c-pres">Alimentación, ocio, salud, ropa y extras por mes (${esc(monLbl(monP().id))})</label><input class="inp" id="c-pres" inputmode="decimal" value="${dec(c.presupuesto || 0)}"></div><button class="btn primary" data-act="pres" style="align-self:flex-end">Guardar</button></div>
-    <p class="note">Es lo que calculás gastar en lo que no está cargado como recurrente. Se ve como una barra de cuatro semanas debajo de lo que te queda en el mes: la semana en curso recibe su parte de lo que te queda a fin de mes, repartido entre los días que faltan. Si una semana gastás de más, las que siguen se achican; si gastás de menos, se agrandan. En la última semana, lo que te queda es lo que tenés. La semana en curso arranca en verde y se pinta día a día; pasa a rojo si lo gastado supera el presupuesto de la semana. Al terminar queda verde o roja según cómo cerró. Si corregís un gasto, el color se corrige. Las compras con tarjeta de crédito no cuentan acá. Con 0 se oculta la barra.</p></section>
+    <p class="note">Es lo que calculás gastar en lo que no está cargado como recurrente. Se ve como una barra de cuatro semanas debajo de lo que te queda en el mes: cada semana recibe su parte de lo que queda del mes. Si una semana gastás de más, las que siguen se achican; si gastás de menos, se agrandan. En la última semana, lo que queda es lo que tenés. La semana en curso arranca en verde y se pinta día a día; pasa a rojo si lo gastado supera el presupuesto de la semana. Al terminar queda verde o roja según cómo cerró. Si corregís un gasto, el color se corrige. Las compras con tarjeta de crédito no cuentan acá. Con 0 se oculta la barra.</p></section>
   <section class="panel"><h2>Capital</h2>
     <div class="field"><span class="label">Ver el capital en</span><div class="chips fila">${c.monedas.map(m => `<button class="chip" data-act="moncap" data-id="${m.id}" aria-pressed="${mc===m.id}">${esc(m.nombre)}</button>`).join('')}</div></div></section>
   <section class="panel" id="tus-datos"><h2>Tus datos</h2>
