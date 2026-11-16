@@ -254,8 +254,6 @@ details.mini[open] summary::before{transform:rotate(90deg)}
 .dot2{width:10px;height:10px;border-radius:50%;background:currentColor;flex:none}
 .ritmo.bien{border-color:color-mix(in srgb,var(--good) 45%,var(--line));background:color-mix(in srgb,var(--good-soft) 55%,var(--surface))}
 .ritmo.mal{border-color:color-mix(in srgb,var(--bad) 45%,var(--line));background:color-mix(in srgb,var(--bad-soft) 55%,var(--surface))}
-.rsemana{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:13px;padding:8px 10px;border-radius:10px;background:var(--surface)}
-.rsemana.bien span:last-child{color:var(--good)} .rsemana.mal span:last-child{color:var(--bad)}
 .semanas{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
 .sem{height:10px;border-radius:5px;overflow:hidden;background:color-mix(in srgb,var(--bg) 22%,transparent)}
 .sem i{display:block;height:100%;border-radius:5px}
@@ -269,7 +267,6 @@ details.mini[open] summary::before{transform:rotate(90deg)}
 .pto{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
 .libre{white-space:nowrap}.pto-libre{background:color-mix(in srgb,var(--bg) 25%,transparent)}
 .wa-prev{white-space:pre-wrap;font:inherit;font-size:14px;line-height:1.45;background:var(--raise);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0;max-height:45vh;overflow:auto}
-.semtxt{display:block;margin-top:6px;font-size:12px;opacity:.85}
 .sem.encurso{outline:1.5px solid color-mix(in srgb,var(--bg) 70%,transparent);outline-offset:1.5px}
 .medios{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
 tbody tr.ro{cursor:default}
@@ -2665,12 +2662,14 @@ function abrirAyuda(){
         <li>Con el botón <strong>+</strong>: Gasto, Ingreso, Transferir o Pagar tarjeta.</li>
         <li>En un gasto elegís de qué cuenta salió o con qué tarjeta lo pagaste, y la categoría. Con tarjeta podés poner cuotas.</li>
         <li>Para cambiar el monto o la moneda, tocá el símbolo de la moneda al lado del monto.</li>
-        <li>Si algo todavía no lo pagaste, guardalo como <em>Pendiente</em>.</li></ul></div>
+        <li>Si algo todavía no lo pagaste, guardalo como <em>Pendiente</em>.</li>
+        <li><em>Es inversión</em> (al lado de <em>Compartido</em>): suma a la gráfica de Inversiones de Análisis, por ejemplo la compra o las cuotas del apartamento. Pagado desde el día a día cuenta también como gasto del mes; desde una cuenta de ahorro no es gasto del mes, pero baja tu ahorro.</li>
+        <li><em>Ingreso extra</em> (en un ingreso): aguinaldo, bono, venta. Análisis lo muestra aparte para que no infle el ingreso habitual.</li></ul></div>
       <div><h4>3. Cada mes</h4><ul>
         <li>En <strong>Pendientes</strong> aparecen tus gastos recurrentes y el pago estimado de cada tarjeta. Tocá <em>Pagado</em> si fue el monto habitual, o tocá el nombre para poner el monto real. <em>Omitir</em> lo saca solo de este mes.</li>
         <li><strong>Te queda a fin de mes</strong> es lo que entra a tus cuentas del día a día, menos lo que sale y lo que pasás a ahorro, contando lo pendiente.</li></ul></div>
       <div><h4>Gastos compartidos</h4><ul>
-        <li>En <strong>Ajustes → Personas</strong> agregás con quién compartís gastos. Al cargar un gasto, marcá <em>Compartido con otra persona</em>, tocá su nombre, elegí quién pagó y qué parte paga cada uno (por defecto, mitad y mitad).</li>
+        <li>En <strong>Ajustes → Personas</strong> agregás con quién compartís gastos. Al cargar un gasto, marcá <em>Compartido</em>, tocá su nombre, elegí quién pagó y qué parte paga cada uno (por defecto, mitad y mitad).</li>
         <li>Si pagaste vos, el gasto sale entero de tu cuenta y la otra persona te debe su parte. Si pagó la otra persona, no toca tus cuentas y le debés la tuya.</li>
         <li>Si pagó la otra persona, cada mes aparece en Pendientes <em>Pagarle a…</em> con tu parte; al pagarle, cuenta como tu gasto del mes.</li>
         <li><strong>Se lo presté</strong>: si alguien usa tu tarjeta o tu plata para algo suyo, marcá <em>Compartido</em> → <em>Se lo presté</em>. Sale de tu cuenta o tarjeta, pero esa persona te debe todo (en cuotas, de a una por mes).</li>
@@ -2693,18 +2692,19 @@ function abrirAyuda(){
         <li>Cuando pagás la factura, usá <em>Pagar tarjeta</em> (o el pendiente estimado). Podés hacer pagos parciales o adelantos.</li></ul></div>
       <div><h4>Pantallas</h4><ul>
         <li><strong>Mes</strong>: cómo venís este mes, por categoría, tarjetas y pendientes.</li>
-        <li><strong>Movimientos</strong>: todo lo del mes, con filtros por tipo, categoría, tarjeta y cuenta.</li>
+        <li><strong>Movimientos</strong>: todo lo del mes, con filtros por tipo, categoría, tarjeta, cuenta y persona. Se combinan, uno por fila (por ejemplo, Alimentación + OCA); si tocás uno que no combina, el otro se quita solo. <em>Ahorros</em> muestra lo que entra y sale de tus cuentas de ahorro.</li>
         <li><strong>Cuentas</strong>: el saldo de cada cuenta en cada moneda y tu capital ahorrado.</li>
-        <li><strong>Análisis</strong>: gráficas mes a mes, tasa de ahorro y en qué se va la plata.</li></ul></div>
+        <li><strong>Análisis</strong>: gráficas mes a mes, tasa de ahorro y en qué se va la plata. Tocá una categoría (en la referencia o en la lista) para verla sola en la gráfica; tocala de nuevo o <em>Ver todas</em> para volver. Abajo, <em>Inversiones</em> muestra cuánto llevás invertido en cada categoría.</li></ul></div>
       <div><h4>Viajes y salidas</h4><ul>
         <li>En <strong>Viajes</strong> creás un viaje con fechas y con quién vas (de tus Personas). Cada uno carga sus viáticos desde una cuenta; lo que se paga con viáticos o se divide durante el viaje queda en el viaje y se salda ahí. Con tarjeta va al resumen de la tarjeta.</li>
-        <li>Lo que cargás con ese botón es un gasto común que además resta de los viáticos. Lo previo (vuelos, reservas) lo cargás con el + de siempre y elegís el viaje en "¿Es de un viaje?".</li>
-        <li>Si un gasto lo pagó otra persona, usá Dividir → pagó ella: no aparece en tus gastos, queda en el viaje y como deuda. Cuando le pagás, ese pago sí aparece.</li>
+        <li>Con <em>+ Gasto</em> dentro del viaje cargás lo de <em>Antes del viaje</em> (vuelos, reservas, seguro: cuentan en tus meses como cualquier gasto) o lo de <em>Durante el viaje</em> (se paga con viáticos o con tarjeta y queda en el viaje).</li>
+        <li>Si un gasto del viaje lo pagó otra persona, elegí quién pagó: no sale de tus cuentas, queda en el viaje como deuda y se salda al final. Cuando le pagás, ese pago sí aparece.</li>
         <li>Una comida o salida puede tener invitados temporales. Lo que pagás vos aparece en tus gastos; lo que pagan otros, solo en la salida. Al saldar: si pagás vos es un gasto, si te pagan es un ingreso.</li></ul></div>
       <div><h4>Tus datos y el cambio de teléfono</h4><ul>
         <li>${S.modo === 'local' ? 'Tus datos se guardan en este dispositivo y la app funciona sin internet.' : 'Tus datos se guardan en tu cuenta de Claude.'}</li>
         ${driveDisponible() ? `<li>Si conectás <strong>Google Drive</strong> (Ajustes → Tus datos), también se guardan en el archivo ${DRIVE.archivo} de tu Drive. Cada cambio se sube solo; si pasó un rato, la app te pide un toque en <em>Sincronizar</em> para renovar el permiso. En otro teléfono o en la computadora, abrí la app y conectá la misma cuenta.</li>` : ''}
-        <li>En <strong>Ajustes → Tus datos</strong>: <em>Exportar copia de seguridad</em> baja un archivo con todo. En el teléfono nuevo, abrí la app y tocá <em>Importar copia</em>.</li>
+        <li>En <strong>Ajustes → Tus datos</strong>: <em>Exportar copia de seguridad</em> baja un archivo con todo. En el teléfono nuevo, abrí la app y tocá <em>Importar copia o movimientos</em> (reemplaza todo).</li>
+        <li>Con ese mismo botón también podés importar un archivo de <em>movimientos para agregar</em> (por ejemplo, gastos que faltaban de la planilla): se suman a lo que ya tenés, sin borrar nada y sin duplicar.</li>
         <li>También podés bajar tus movimientos en un archivo para Excel.</li></ul></div>
     </div>
     <div class="actions"><button type="button" class="btn primary" data-act="close">Entendido</button></div>
@@ -2793,7 +2793,7 @@ function abrirHoja(re){
     ${F.tipo === 'pago' ? '' : `<div class="field"><label for="f-concepto">${F.tipo==='gasto'?'Dónde / en qué':'Concepto'}</label><input class="inp" id="f-concepto" autocomplete="off" value="${esc(F.concepto)}" placeholder="${F.tipo==='gasto'?(F.cat==='Súper'?'Supermercado, feria…':'Farmacia, taxi…'):'Sueldo, aguinaldo…'}">
       ${sug.length ? chipsDe('f', 'concepto', sug.map(s => [s,s]), F.concepto) : ''}</div>`}
     ${F.tipo === 'gasto' && !F.plRef && !F.cargo ? bloqueViaje() : ''}
-    ${F.tipo === 'gasto' && PERS().length && !F.plRef && !F.cargo ? bloqueDividir() : ''}
+    ${F.tipo === 'gasto' && PERS().length && !F.plRef && !F.cargo ? bloqueDividir() : checkInv() ? `<div class="checks">${checkInv()}</div>` : ''}
     ${F.tipo === 'gasto' && F.cargo && PER(F.cargo) ? (() => { const tedebe = balanceMes(F.cargo, mesDe(F.fecha)) - (F.id ? enMesPer(S.movs.find(m => m.id === F.id), F.cargo, mesDe(F.fecha)) : 0), nom = esc(nomPer(F.cargo));
       return `<p class="note" style="margin:0">Se lo pagás a ${nom}: aparece en sus movimientos.</p>${F.tarjeta ? '' : `<label class="check"><input type="checkbox" id="f-compensa" ${F.compensado ? 'checked' : ''}> No se lo pagué: lo descuento de lo que me debe ${nom}${tedebe >= 1 ? ` (este mes te debe ${fmt(tedebe)})` : ''}</label>
       <p class="note" style="margin:-4px 0 0">${F.compensado ? `No sale plata de tu cuenta: baja lo que ${nom} te debe${tedebe < (parseNum(F.montoTxt) || 0) * tasaDe(F.moneda) - 1 ? ' y la diferencia queda como que le debés' : ''}.` : `Se lo pagaste: sale de tu cuenta y quedan a mano por este monto.`}</p>`}`; })() : ''}
@@ -2809,7 +2809,7 @@ function abrirHoja(re){
       if (!F.ingDesc || !descuentosDe(F.ingDesc).length) return F.neto != null ? `<p class="note" style="margin:0">Registrado como neto ${fmtEn(F.neto, F.moneda)} + descuentos ${fmtEn(F.descTotal ?? (F.bhuDesc ? F.bhuDesc / (F.tasa || 1) : 0), F.moneda)}.</p>` : '';
       const ds = descuentosDe(F.ingDesc), tot = descEnMoneda() * tasaDe(F.moneda);
       return `<label class="check"><input type="checkbox" id="f-neto" ${F.inclDesc !== false ? 'checked' : ''}> Es lo que cobré en mano: sumar los descuentos (${esc(ds.map(d => `${d.nombre} ${fmtM({...valorDesc(d)})}`).join(', '))} = ${fmt(tot)}) y marcarlos como pagados</label>`; })() : ''}
-    ${F.tipo === 'ingreso' && !F.saldo && !F.cargo ? `<label class="check"><input type="checkbox" id="f-extra" ${F.extra ? 'checked' : ''}> Ingreso extra: aguinaldo, bono, venta o algo que no se repite todos los meses</label>` : ''}
+    ${F.tipo === 'ingreso' && !F.saldo && !F.cargo ? `<label class="check" title="Aguinaldo, bono, venta o algo que no se repite todos los meses: Análisis lo muestra aparte"><input type="checkbox" id="f-extra" ${F.extra ? 'checked' : ''}> Ingreso extra</label>` : ''}
     ${F.tipo === 'gasto' && pagoOtro(F) && !F.plRef ? `<div class="field"><span class="label">Cuotas (las paga ${esc(nomPer(F.split.pagador))})</span><div class="stepper"><button type="button" class="iconbtn" data-act="cuota" data-d="-1" aria-label="Menos cuotas">−</button><span class="num">${F.cuotas}</span><button type="button" class="iconbtn" data-act="cuota" data-d="1" aria-label="Más cuotas">+</button></div><span class="note num" id="f-cuota"></span></div>${F.cuotas > 1 ? `<div class="field"><span class="label">Empieza a pagarse en</span><div class="stepper"><button type="button" class="iconbtn" data-act="inicuo" data-d="-1" aria-label="Un mes antes">${chev('M15 18l-6-6 6-6')}</button><span class="num" style="min-width:5.5em;text-align:center">${corto(F.inicioCuotas || mesDe(F.fecha))}</span><button type="button" class="iconbtn" data-act="inicuo" data-d="1" aria-label="Un mes después">${chev('M9 6l6 6-6 6')}</button></div><span class="note">Por ejemplo, si su tarjeta cierra antes de la compra, empieza el mes siguiente.</span></div>` : ''}` : ''}
     ${card && !F.plRef ? `<div class="two"><div class="field"><span class="label">Cuotas</span><div class="stepper"><button type="button" class="iconbtn" data-act="cuota" data-d="-1" aria-label="Menos cuotas">−</button><span class="num">${F.cuotas}</span><button type="button" class="iconbtn" data-act="cuota" data-d="1" aria-label="Más cuotas">+</button></div><span class="note num" id="f-cuota"></span></div>
       <div class="field"><span class="label">Se paga en</span><div class="stepper"><button type="button" class="iconbtn" data-act="res" data-d="-1" aria-label="Un mes antes">${chev('M15 18l-6-6 6-6')}</button><span class="num" style="min-width:5.5em">${corto(addMes(F.mesResumen,1))}</span><button type="button" class="iconbtn" data-act="res" data-d="1" aria-label="Un mes después">${chev('M9 18l6-6-6-6')}</button></div><span class="note">${t && t.cierre ? `Cierra el ${t.cierre}${t.vence ? ` · vence el ${t.vence}` : ''}` : 'Sin día de cierre'}</span></div></div>` : ''}
@@ -2828,10 +2828,11 @@ function abrirHoja(re){
 // Bloque "Dividido con" del formulario de gasto
 function partesIguales(){ if (F.split) F.split.editados = []; if (F.split.modo === 'prestado'){ F.split.partes = {yo: 0}; for (const id of F.split.con) F.split.partes[id] = 100; return; }
   if (F.split.modo === 'pedido'){ F.split.partes = {yo: 100}; for (const id of F.split.con) F.split.partes[id] = 0; F.split.pagador = F.split.con[0] || 'yo'; return; } const n = F.split.con.length + 1, q = Math.floor(10000 / n) / 100; F.split.partes = {yo: Math.round((100 - q * (n - 1)) * 100) / 100}; for (const id of F.split.con) F.split.partes[id] = q; }
+// "Es inversión" va en el mismo renglón que "Compartido" (suma a la gráfica de inversiones; desde una cuenta de ahorro no es gasto del mes)
+const checkInv = () => F.tipo === 'gasto' && !F.saldo && !(F.plantilla && sumaInv({plantilla:F.plantilla})) ? `<label class="check" title="Suma a la gráfica de inversiones. Si lo pagás desde una cuenta de ahorro, no cuenta como gasto del mes"><input type="checkbox" id="f-suminv" ${F.sumaInv ? 'checked' : ''}> Es inversión</label>` : '';
 function bloqueDividir(){
   const sp = F.split, abierto = !!(sp || F.splitOpen), modo = (sp && sp.modo) || F.splitModo || 'div', con = sp ? sp.con : [];
-  // "Es inversión" va en el mismo renglón que "Compartido" (suma a la gráfica de inversiones; desde una cuenta de ahorro no es gasto del mes)
-  const inv = F.tipo === 'gasto' && !F.saldo && !(F.plantilla && sumaInv({plantilla:F.plantilla})) ? `<label class="check" title="Suma a la gráfica de inversiones. Si lo pagás desde una cuenta de ahorro, no cuenta como gasto del mes"><input type="checkbox" id="f-suminv" ${F.sumaInv ? 'checked' : ''}> Es inversión</label>` : '';
+  const inv = checkInv();
   let h = `<div class="checks"><label class="check" title="Compartido con otra persona"><input type="checkbox" id="f-comp" ${abierto ? 'checked' : ''}> Compartido</label>${inv}</div>`;
   if (!abierto) return h;
   h += `<div class="compartir">
