@@ -224,6 +224,8 @@ details.mini[open] summary::before{transform:rotate(90deg)}
 .minibars .mb i{height:5px;border-radius:3px;background:var(--line);overflow:hidden}
 .minibars .mb i b{display:block;height:100%;border-radius:3px}
 .antop{position:sticky;top:0;z-index:6;background:var(--bg);padding:8px 0;margin-top:-8px}
+.checks{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.checks .check{flex:1 1 0;min-width:max-content;margin:0}
 .legend .legbtn{background:none;border:0;padding:4px 2px;margin:-4px 0;font:inherit;color:inherit;cursor:pointer;border-radius:6px}
 .legend .legbtn[aria-pressed="true"]{color:var(--ink);font-weight:600}
 .legend .legbtn:focus-visible{outline:2px solid var(--accent)}
@@ -2382,8 +2384,8 @@ function vAnalisis(){
   </div>
   ${crudo.some(x => x.inv >= 1) ? (() => { const cs = [...new Set(crudo.flatMap(x => Object.keys(x.invCat || {})))], tot = crudo.reduce((a, x) => a + x.inv / x.tmc, 0);
     return `<section class="panel"><h2>Inversiones <span>${esc(monLbl(mc))} · total acumulado</span></h2><div class="chartbox" style="height:220px"><canvas id="ch6" aria-label="Total invertido por categoría"></canvas></div>
-    <div class="legend">${cs.map(id => `<span><i style="background:${colCat(id)}"></i>${esc(nomCat(id))} ${fmtEn(Math.round(crudo.reduce((a, x) => a + ((x.invCat || {})[id] || 0) / x.tmc, 0)), mc)}</span>`).join('')}</div>
-    <p class="note">Cuánto llevás invertido en cada categoría, sumando lo que marcás "Es inversión" (la compra y las cuotas del apartamento, por ejemplo). Total: ${fmtEn(Math.round(tot), mc)}.</p></section>`; })() : ''}
+    <div class="legend"><span><i style="background:var(--ink);height:2px"></i><b>Total ${fmtEn(Math.round(tot), mc)}</b></span>${cs.map(id => `<span><i style="background:${colCat(id)}"></i>${esc(nomCat(id))} ${fmtEn(Math.round(crudo.reduce((a, x) => a + ((x.invCat || {})[id] || 0) / x.tmc, 0)), mc)}</span>`).join('')}</div>
+    <p class="note">Cuánto llevás invertido en cada categoría, sumando lo que marcás "Es inversión" (la compra y las cuotas del apartamento, por ejemplo). La línea punteada es el total de todas.</p></section>`; })() : ''}
   <section class="panel"><h2>Por año <span>${real ? sim + ' de hoy' : sim}</span></h2><div class="tablewrap"><table><thead><tr><th>Año</th><th class="r">Meses</th><th class="r">Ingresos</th>${CATS().filter(c => !esInv(c.id)).map(c => `<th class="r">${esc(c.nombre)}</th>`).join('')}<th class="r">Tarjeta sin detalle</th><th class="r">Ahorro</th><th class="r">Tasa</th></tr></thead>
     <tbody>${porAnio.map(a => `<tr class="ro"><td>${a.y}</td><td class="r num">${a.n}</td><td class="r num">${fmt(a.ing)}</td>${CATS().filter(c => !esInv(c.id)).map(c => `<td class="r num">${fmt(a.cats[c.id])}</td>`).join('')}<td class="r num">${fmt(a.tarSin)}</td><td class="r num">${fmt(Math.max(0, a.aho))}</td><td class="r num">${Math.max(0, a.tasa).toFixed(1)} %</td></tr>`).join('')}</tbody></table></div>
     <p class="note">Meses cerrados. Las compras con tarjeta van en su categoría, el mes en que pagás el resumen. Ahorro = ingresos − salidas.</p></section>`;
@@ -2434,7 +2436,9 @@ function dibujarGraficas(){
   const c6 = $('#ch6');
   if (c6){ const cs = [...new Set(crudo.flatMap(x => Object.keys(x.invCat || {})))];
     charts.push(new Chart(c6, {type:'line', data:{labels: selCap.map(x => corto(x.mk)), datasets: cs.map(id => { let a = 0; const acum = {}; for (const x of crudo){ a += ((x.invCat || {})[id] || 0) / x.tmc; acum[x.mk] = a; }
-      return {label:nomCat(id), data:selCap.map(x => acum[x.mk]), borderColor:colCatRes(id), backgroundColor:colCatRes(id), borderWidth:2, stepped:true, pointRadius:0, pointHoverRadius:4, fill:false}; })}, options: base(true, false)})); }
+      return {label:nomCat(id), data:selCap.map(x => acum[x.mk]), borderColor:colCatRes(id), backgroundColor:colCatRes(id), borderWidth:2, stepped:true, pointRadius:0, pointHoverRadius:4, fill:false}; })
+      .concat((() => { let a = 0; const acum = {}; for (const x of crudo){ a += (x.inv || 0) / x.tmc; acum[x.mk] = a; } // total de todas las categorías, punteado
+        return [{label:'Total', data:selCap.map(x => acum[x.mk]), borderColor:css('--ink'), borderWidth:2, borderDash:[5, 4], stepped:true, pointRadius:0, pointHoverRadius:4, fill:false}]; })())}, options: base(true, false)})); }
 }
 
 // ---------- Reagrupar gastos: pasar de categoría muchos gastos de una vez, en todos los meses (los de la app y los de la planilla) ----------
@@ -2805,7 +2809,6 @@ function abrirHoja(re){
       if (!F.ingDesc || !descuentosDe(F.ingDesc).length) return F.neto != null ? `<p class="note" style="margin:0">Registrado como neto ${fmtEn(F.neto, F.moneda)} + descuentos ${fmtEn(F.descTotal ?? (F.bhuDesc ? F.bhuDesc / (F.tasa || 1) : 0), F.moneda)}.</p>` : '';
       const ds = descuentosDe(F.ingDesc), tot = descEnMoneda() * tasaDe(F.moneda);
       return `<label class="check"><input type="checkbox" id="f-neto" ${F.inclDesc !== false ? 'checked' : ''}> Es lo que cobré en mano: sumar los descuentos (${esc(ds.map(d => `${d.nombre} ${fmtM({...valorDesc(d)})}`).join(', '))} = ${fmt(tot)}) y marcarlos como pagados</label>`; })() : ''}
-    ${F.tipo === 'gasto' && !F.saldo && !(F.plantilla && sumaInv({plantilla:F.plantilla})) ? `<label class="check"><input type="checkbox" id="f-suminv" ${F.sumaInv ? 'checked' : ''}> Es inversión (por ejemplo, el apartamento): suma a la gráfica de inversiones. Desde una cuenta de ahorro no cuenta como gasto del mes</label>` : ''}
     ${F.tipo === 'ingreso' && !F.saldo && !F.cargo ? `<label class="check"><input type="checkbox" id="f-extra" ${F.extra ? 'checked' : ''}> Ingreso extra: aguinaldo, bono, venta o algo que no se repite todos los meses</label>` : ''}
     ${F.tipo === 'gasto' && pagoOtro(F) && !F.plRef ? `<div class="field"><span class="label">Cuotas (las paga ${esc(nomPer(F.split.pagador))})</span><div class="stepper"><button type="button" class="iconbtn" data-act="cuota" data-d="-1" aria-label="Menos cuotas">−</button><span class="num">${F.cuotas}</span><button type="button" class="iconbtn" data-act="cuota" data-d="1" aria-label="Más cuotas">+</button></div><span class="note num" id="f-cuota"></span></div>${F.cuotas > 1 ? `<div class="field"><span class="label">Empieza a pagarse en</span><div class="stepper"><button type="button" class="iconbtn" data-act="inicuo" data-d="-1" aria-label="Un mes antes">${chev('M15 18l-6-6 6-6')}</button><span class="num" style="min-width:5.5em;text-align:center">${corto(F.inicioCuotas || mesDe(F.fecha))}</span><button type="button" class="iconbtn" data-act="inicuo" data-d="1" aria-label="Un mes después">${chev('M9 6l6 6-6 6')}</button></div><span class="note">Por ejemplo, si su tarjeta cierra antes de la compra, empieza el mes siguiente.</span></div>` : ''}` : ''}
     ${card && !F.plRef ? `<div class="two"><div class="field"><span class="label">Cuotas</span><div class="stepper"><button type="button" class="iconbtn" data-act="cuota" data-d="-1" aria-label="Menos cuotas">−</button><span class="num">${F.cuotas}</span><button type="button" class="iconbtn" data-act="cuota" data-d="1" aria-label="Más cuotas">+</button></div><span class="note num" id="f-cuota"></span></div>
@@ -2827,7 +2830,9 @@ function partesIguales(){ if (F.split) F.split.editados = []; if (F.split.modo =
   if (F.split.modo === 'pedido'){ F.split.partes = {yo: 100}; for (const id of F.split.con) F.split.partes[id] = 0; F.split.pagador = F.split.con[0] || 'yo'; return; } const n = F.split.con.length + 1, q = Math.floor(10000 / n) / 100; F.split.partes = {yo: Math.round((100 - q * (n - 1)) * 100) / 100}; for (const id of F.split.con) F.split.partes[id] = q; }
 function bloqueDividir(){
   const sp = F.split, abierto = !!(sp || F.splitOpen), modo = (sp && sp.modo) || F.splitModo || 'div', con = sp ? sp.con : [];
-  let h = `<label class="check"><input type="checkbox" id="f-comp" ${abierto ? 'checked' : ''}> Compartido con otra persona</label>`;
+  // "Es inversión" va en el mismo renglón que "Compartido" (suma a la gráfica de inversiones; desde una cuenta de ahorro no es gasto del mes)
+  const inv = F.tipo === 'gasto' && !F.saldo && !(F.plantilla && sumaInv({plantilla:F.plantilla})) ? `<label class="check" title="Suma a la gráfica de inversiones. Si lo pagás desde una cuenta de ahorro, no cuenta como gasto del mes"><input type="checkbox" id="f-suminv" ${F.sumaInv ? 'checked' : ''}> Es inversión</label>` : '';
+  let h = `<div class="checks"><label class="check" title="Compartido con otra persona"><input type="checkbox" id="f-comp" ${abierto ? 'checked' : ''}> Compartido</label>${inv}</div>`;
   if (!abierto) return h;
   h += `<div class="compartir">
     <div class="field"><span class="label">Cómo</span>${seg('f', 'splitModo', [['div','Dividido'], ['prestado','Se lo presté'], ['pedido','Se lo pedí']], modo)}</div>
@@ -3134,7 +3139,7 @@ function abrirPlant(p, re){
     ${P.tipo==='mover' ? `<div class="field"><span class="label">Sale de</span>${chipsDe('p', 'de', ctas, P.de)}</div><div class="field"><span class="label">Entra en</span>${chipsDe('p', 'a', ctas.filter(([id]) => id !== P.de), P.a)}</div>` : ''}
     <div class="two"><div class="field"><label for="p-monto">Monto habitual</label><input class="inp" id="p-monto" inputmode="decimal" value="${esc(P.montoTxt)}"></div>
       <div class="field"><span class="label">Moneda</span>${ms.length > 1 ? seg('p', 'moneda', ms.map(x => [x, monLbl(x)]), P.moneda) : `<span style="padding:10px 0;font-weight:600">${esc(MON(P.moneda).nombre)}</span>`}</div></div>
-    ${P.tipo === 'gasto' ? `<label class="check"><input type="checkbox" id="p-suminv" ${P.sumaInv ? 'checked' : ''}> Es inversión (por ejemplo, la cuota de la hipoteca): suma a la gráfica de inversiones</label>` : ''}
+    ${P.tipo === 'gasto' ? `<label class="check"><input type="checkbox" id="p-suminv" ${P.sumaInv ? 'checked' : ''}> Es inversión</label>` : ''}
     ${P.id ? `<div class="field"><span class="label">Estado</span>${seg('p', 'activa', [['si','Activo'],['no','Pausado']], P.activa===false?'no':'si')}</div>` : ''}
     <div class="actions">${P.id ? `<button type="button" class="btn danger" data-act="pdel">Borrar</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>
   </form></div>`;
