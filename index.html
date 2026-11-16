@@ -223,6 +223,7 @@ details.mini[open] summary::before{transform:rotate(90deg)}
 .minibars .mb .num{text-align:right}
 .minibars .mb i{height:5px;border-radius:3px;background:var(--line);overflow:hidden}
 .minibars .mb i b{display:block;height:100%;border-radius:3px}
+.antop{position:sticky;top:0;z-index:6;background:var(--bg);padding:8px 0;margin-top:-8px}
 .legend .legbtn{background:none;border:0;padding:4px 2px;margin:-4px 0;font:inherit;color:inherit;cursor:pointer;border-radius:6px}
 .legend .legbtn[aria-pressed="true"]{color:var(--ink);font-weight:600}
 .legend .legbtn:focus-visible{outline:2px solid var(--accent)}
@@ -766,6 +767,20 @@ async function asegurarViajes(){
   return (await guardarCfg({cats})) ? 'Viajes' : catDefecto();
 }
 let MIGVJ = false;
+// La categoría Inversiones deja de existir: lo que estaba ahí pasa a Vivienda (o a la categoría por defecto) con la marca "Es inversión"
+let MIGINV = false;
+async function migrarInversiones(){
+  if (MIGINV) return; MIGINV = true;
+  try {
+    const invs = CATS().filter(c => esInv(c.id)); if (!invs.length) return;
+    const ids = new Set(invs.map(c => c.id)), dest = (CATS().find(c => !ids.has(c.id) && claveConcepto(c.nombre) === 'vivienda') || {}).id || catDefecto();
+    for (const [mk, p] of Object.entries(S.plan)){ if (!(p.items || []).some(it => ids.has(it.cat))) continue;
+      await S.db.collection('planilla').doc(mk).set({...p, items: p.items.map(it => ids.has(it.cat) ? {...it, cat:dest, sumaInv:true} : it)}); }
+    for (const m of S.movs.filter(m => ids.has(m.cat))) await S.db.collection(COL.movs).doc(m.id).update({cat:dest, sumaInv:true});
+    for (const p of S.plant.filter(p => ids.has(p.cat))) await S.db.collection(COL.plant).doc(p.id).update({cat:dest, sumaInv:true});
+    await guardarCfg({cats: CATS().filter(c => !ids.has(c.id))});
+  } catch(e){ registrarError('Pasar Inversiones a Vivienda', e); }
+}
 async function migrarViajes(){
   if (MIGVJ) return; MIGVJ = true;
   try {
@@ -865,9 +880,9 @@ function sumar(r, m, v, pend){
   else if (m.tipo === 'pago'){ pend ? r.salP += v : r.pagos += v; if (!esDia(m.cuenta)) pend ? r.ahoP -= v : r.ahorro -= v; }
   else if (m.tipo === 'gasto'){
     if (isCard(m)){ pend ? r.tarP += v : r.tarjeta += v; return; }
-    // Inversión (por ejemplo, el apartamento): no es gasto del mes ni baja el ahorro. Desde una cuenta de ahorro queda todo igual;
-    // desde el día a día cuenta como plata que pasaste a ahorro/inversión.
-    if (esInv(m.cat)){ if (pend){ if (esDia(m.cuenta)) r.ahoP += v; } else { r.cats[m.cat] = (r.cats[m.cat]||0) + v; r.inv = (r.inv||0) + v; if (esDia(m.cuenta)) r.ahorro += v; } return; }
+    // Inversión pagada desde una cuenta de ahorro (por ejemplo, la compra del apartamento): no es gasto del mes (no suma a la categoría
+    // ni a las salidas de Análisis), pero baja tu ahorro. Si se paga desde el día a día, es un gasto normal que además suma a inversiones.
+    if (sumaInv(m) && !esDia(m.cuenta)){ if (pend){ r.salP += v; r.ahoP -= v; } else { r.gastos += v; r.invAho = (r.invAho || 0) + v; r.ahorro -= v; } return; }
     if (pend) r.salP += v; else { if (!(m.split && m.split.modo === 'prestado')) r.cats[m.cat] = (r.cats[m.cat]||0) + v; r.gastos += v; } // lo prestado sale de tu plata pero no es gasto tuyo: no suma a la categoría
     if (!esDia(m.cuenta)) pend ? r.ahoP -= v : r.ahorro -= v;
   }
@@ -934,7 +949,7 @@ function cajaBase(mk){
 function gastosMes(mk, tplR){
   const todo = {}, rec = {}, tar = {}, otros = {}; let tarPag = 0;
   const suma = (o, k, v) => { o[k] = (o[k] || 0) + v; };
-  const fuera = m => m.tipo !== 'gasto' || m.ajeno || m.compensado || (m.split && m.split.modo === 'prestado') || esInv(m.cat); // inversiones: aparte
+  const fuera = m => m.tipo !== 'gasto' || m.ajeno || m.compensado || (m.split && m.split.modo === 'prestado') || (sumaInv(m) && !isCard(m) && !esDia(m.cuenta)); // inversión desde el ahorro: no es gasto del mes
   for (const x of itemsDelMes(mk)){ const m = x.m; if (fuera(m) || m.estado === 'pend' || isCard(m)) continue;
     if (pagoOtro(m)){ const o = otros[m.cat] || (otros[m.cat] = {v:0, quien:new Set()}); o.v += x.uyu; o.quien.add(nomPer(m.split.pagador)); continue; }
     suma(todo, m.cat, x.uyu); if (esRec(m, tplR)) suma(rec, m.cat, x.uyu); }
@@ -962,11 +977,12 @@ function serie(){
     const G = gastosMes(mk, tplR);
     const tarSin = Math.max(0, r.pagos - G.tarPag); // pagos de tarjeta sin compras cargadas (intereses, cargos o compras que no están en la app)
     // Inversiones pagadas desde tus cuentas: no son gasto del mes ni bajan el ahorro del mes; se dibujan aparte
-    // Inversiones del mes: la categoría Inversiones (no es gasto) y los gastos que también suman, como la cuota de la hipoteca (siguen siendo gasto)
-    const inv = (r.inv || 0) + itemsDelMes(mk).filter(x => !isCard(x.m)).concat(itemsDelMes(addMes(mk, -1)).filter(x => isCard(x.m)))
-      .reduce((a, x) => a + (x.m.tipo === 'gasto' && x.m.estado === 'pagado' && !esInv(x.m.cat) && sumaInv(x.m) ? x.uyu : 0), 0);
+    // Inversiones del mes por categoría: todo lo marcado "Es inversión" (en tarjeta, el mes en que se paga el resumen)
+    const invCat = {}; for (const x of itemsDelMes(mk).filter(x => !isCard(x.m)).concat(itemsDelMes(addMes(mk, -1)).filter(x => isCard(x.m))))
+      if (x.m.tipo === 'gasto' && x.m.estado === 'pagado' && sumaInv(x.m)) invCat[x.m.cat] = (invCat[x.m.cat] || 0) + x.uyu;
+    const inv = Object.values(invCat).reduce((a, v) => a + v, 0);
     const ext = itemsDelMes(mk).reduce((a, x) => a + (x.m.tipo === 'ingreso' && x.m.extra && x.m.estado === 'pagado' && !x.m.compensado && !pagoOtro(x.m) ? x.uyu : 0), 0); // ingresos que no se repiten
-    out.push({mk, cats:{...r.cats}, todo:G.todo, rec:G.rec, tar:G.tar, tarSin, pagos:r.pagos, salida:r.salida, ahorro:r.ahorro, ing:r.ing, ext, inv, invMc: inv / (tasaEnMes(mc, mk) || 1), capMc});
+    out.push({mk, cats:{...r.cats}, todo:G.todo, rec:G.rec, tar:G.tar, tarSin, pagos:r.pagos, salida:r.salida - (r.invAho || 0), ahorro:r.ahorro, ing:r.ing, ext, inv, invCat, invMc: inv / (tasaEnMes(mc, mk) || 1), tmc: tasaEnMes(mc, mk) || 1, capMc});
     mk = addMes(mk, 1);
   }
   return out;
@@ -1961,6 +1977,7 @@ function render(){
   if (S.view === 'analisis') dibujarGraficas();
   if (S.view === 'eventos' && $('#chv')) dibujarViaje();
   mostrarElegidos($('#main'));
+  if (!MIGINV && Object.values(S.ready).every(Boolean) && CATS().some(c => esInv(c.id))) setTimeout(migrarInversiones, 120);
   if (!MIGVJ && Object.values(S.ready).every(Boolean) && (S.evs || []).some(e => e.tipo === 'viaje')) setTimeout(migrarViajes, 80);
   if (!S.cfg.migRec && !MIGREC && Object.values(S.ready).every(Boolean) && ((S.cfg.cats || []).some(c => c.id === 'Fijos') || (S.cfg.subs || []).length)) setTimeout(migrarRecurrentes, 50);
   if (lsGet(LS_UNIRSE) && !S.unirseVisto && S.modo === 'local' && Object.values(S.ready).every(Boolean) && !$('#overlay').innerHTML){ S.unirseVisto = true; setTimeout(abrirUnirse, 300); }
@@ -2361,9 +2378,10 @@ function vAnalisis(){
     <section class="panel"><h2>Capital <span>${esc(monLbl(mc))}</span></h2><div class="chartbox"><canvas id="ch3" aria-label="Capital por mes"></canvas></div>
       <p class="note">Suma de tus cuentas de ahorro al cierre de cada mes.</p></section>
   </div>
-  ${crudo.some(x => x.inv >= 1) ? `<section class="panel"><h2>Inversiones <span>${esc(monLbl(mc))}</span></h2><div class="chartbox" style="height:200px"><canvas id="ch6" aria-label="Inversiones por mes y acumulado"></canvas></div>
-    <div class="legend"><span><i style="background:var(--c-inv)"></i>Invertido en el mes</span><span><i style="background:var(--accent);height:2px"></i>Total invertido</span></div>
-    <p class="note">Lo que cargás en la categoría Inversiones (por ejemplo, la compra del apartamento), que no cuenta como gasto, y los gastos marcados "También suma a mis inversiones" (la cuota de la hipoteca), que siguen siendo gasto del mes. Total invertido hasta hoy: ${fmtEn(Math.round(crudo.reduce((a, x) => a + (x.invMc || 0), 0)), mc)}.</p></section>` : ''}
+  ${crudo.some(x => x.inv >= 1) ? (() => { const cs = [...new Set(crudo.flatMap(x => Object.keys(x.invCat || {})))], tot = crudo.reduce((a, x) => a + x.inv / x.tmc, 0);
+    return `<section class="panel"><h2>Inversiones <span>${esc(monLbl(mc))} · total acumulado</span></h2><div class="chartbox" style="height:220px"><canvas id="ch6" aria-label="Total invertido por categoría"></canvas></div>
+    <div class="legend">${cs.map(id => `<span><i style="background:${colCat(id)}"></i>${esc(nomCat(id))} ${fmtEn(Math.round(crudo.reduce((a, x) => a + ((x.invCat || {})[id] || 0) / x.tmc, 0)), mc)}</span>`).join('')}</div>
+    <p class="note">Cuánto llevás invertido en cada categoría, sumando lo que marcás "Es inversión" (la compra y las cuotas del apartamento, por ejemplo). Total: ${fmtEn(Math.round(tot), mc)}.</p></section>`; })() : ''}
   <section class="panel"><h2>Por año <span>${real ? sim + ' de hoy' : sim}</span></h2><div class="tablewrap"><table><thead><tr><th>Año</th><th class="r">Meses</th><th class="r">Ingresos</th>${CATS().filter(c => !esInv(c.id)).map(c => `<th class="r">${esc(c.nombre)}</th>`).join('')}<th class="r">Tarjeta sin detalle</th><th class="r">Ahorro</th><th class="r">Tasa</th></tr></thead>
     <tbody>${porAnio.map(a => `<tr class="ro"><td>${a.y}</td><td class="r num">${a.n}</td><td class="r num">${fmt(a.ing)}</td>${CATS().filter(c => !esInv(c.id)).map(c => `<td class="r num">${fmt(a.cats[c.id])}</td>`).join('')}<td class="r num">${fmt(a.tarSin)}</td><td class="r num">${fmt(Math.max(0, a.aho))}</td><td class="r num">${Math.max(0, a.tasa).toFixed(1)} %</td></tr>`).join('')}</tbody></table></div>
     <p class="note">Meses cerrados. Las compras con tarjeta van en su categoría, el mes en que pagás el resumen. Ahorro = ingresos − salidas.</p></section>`;
@@ -2410,12 +2428,11 @@ function dibujarGraficas(){
   if (c5) charts.push(new Chart(c5, {data:{labels, datasets: soloBarras(gruposChart(sel, 'tar', 'ch5'))}, options: base(false, true)}));
   if (c2) charts.push(new Chart(c2, {type:'bar', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Ahorro', data:selCap.map(x => Math.max(0, x.ahorro)), backgroundColor:css('--c-ahorro'), borderRadius:3}]}, options: base(false, false)}));
   if (c3) charts.push(new Chart(c3, {type:'line', data:{labels: selCap.map(x => corto(x.mk)), datasets:[{label:'Capital', data:selCap.map(x=>x.capMc), borderColor:css('--accent'), backgroundColor:css('--accent-soft'), fill:true, borderWidth:2, pointRadius: selCap.length < 3 ? 3 : 0, pointHoverRadius:4, tension:.25}]}, options: base(true, false)}));
-  // Inversiones: barra con lo invertido en cada mes y escalón con el total acumulado (que no vuelve a cero)
+  // Inversiones: una línea por categoría con el total acumulado (sube cuando invertís y queda plana el resto)
   const c6 = $('#ch6');
-  if (c6){ let acum = 0; const tot = {}; for (const x of crudo){ acum += x.invMc || 0; tot[x.mk] = acum; }
-    charts.push(new Chart(c6, {data:{labels: selCap.map(x => corto(x.mk)), datasets:[
-      {type:'bar', label:'Invertido en el mes', data:selCap.map(x => x.invMc || 0), backgroundColor:css('--c-inv'), borderRadius:3},
-      {type:'line', label:'Total invertido', data:selCap.map(x => tot[x.mk]), borderColor:css('--accent'), borderWidth:2, stepped:true, pointRadius:0, pointHoverRadius:4, fill:false}]}, options: base(true, false)})); }
+  if (c6){ const cs = [...new Set(crudo.flatMap(x => Object.keys(x.invCat || {})))];
+    charts.push(new Chart(c6, {type:'line', data:{labels: selCap.map(x => corto(x.mk)), datasets: cs.map(id => { let a = 0; const acum = {}; for (const x of crudo){ a += ((x.invCat || {})[id] || 0) / x.tmc; acum[x.mk] = a; }
+      return {label:nomCat(id), data:selCap.map(x => acum[x.mk]), borderColor:colCatRes(id), backgroundColor:colCatRes(id), borderWidth:2, stepped:true, pointRadius:0, pointHoverRadius:4, fill:false}; })}, options: base(true, false)})); }
 }
 
 // ---------- Reagrupar gastos: pasar de categoría muchos gastos de una vez, en todos los meses (los de la app y los de la planilla) ----------
@@ -2786,7 +2803,7 @@ function abrirHoja(re){
       if (!F.ingDesc || !descuentosDe(F.ingDesc).length) return F.neto != null ? `<p class="note" style="margin:0">Registrado como neto ${fmtEn(F.neto, F.moneda)} + descuentos ${fmtEn(F.descTotal ?? (F.bhuDesc ? F.bhuDesc / (F.tasa || 1) : 0), F.moneda)}.</p>` : '';
       const ds = descuentosDe(F.ingDesc), tot = descEnMoneda() * tasaDe(F.moneda);
       return `<label class="check"><input type="checkbox" id="f-neto" ${F.inclDesc !== false ? 'checked' : ''}> Es lo que cobré en mano: sumar los descuentos (${esc(ds.map(d => `${d.nombre} ${fmtM({...valorDesc(d)})}`).join(', '))} = ${fmt(tot)}) y marcarlos como pagados</label>`; })() : ''}
-    ${F.tipo === 'gasto' && !F.saldo && !esInv(F.cat) && !(F.plantilla && sumaInv({plantilla:F.plantilla})) ? `<label class="check"><input type="checkbox" id="f-suminv" ${F.sumaInv ? 'checked' : ''}> También suma a mis inversiones (por ejemplo, la cuota de la hipoteca)</label>` : ''}
+    ${F.tipo === 'gasto' && !F.saldo && !(F.plantilla && sumaInv({plantilla:F.plantilla})) ? `<label class="check"><input type="checkbox" id="f-suminv" ${F.sumaInv ? 'checked' : ''}> Es inversión (por ejemplo, el apartamento): suma a la gráfica de inversiones. Desde una cuenta de ahorro no cuenta como gasto del mes</label>` : ''}
     ${F.tipo === 'ingreso' && !F.saldo && !F.cargo ? `<label class="check"><input type="checkbox" id="f-extra" ${F.extra ? 'checked' : ''}> Ingreso extra: aguinaldo, bono, venta o algo que no se repite todos los meses</label>` : ''}
     ${F.tipo === 'gasto' && pagoOtro(F) && !F.plRef ? `<div class="field"><span class="label">Cuotas (las paga ${esc(nomPer(F.split.pagador))})</span><div class="stepper"><button type="button" class="iconbtn" data-act="cuota" data-d="-1" aria-label="Menos cuotas">−</button><span class="num">${F.cuotas}</span><button type="button" class="iconbtn" data-act="cuota" data-d="1" aria-label="Más cuotas">+</button></div><span class="note num" id="f-cuota"></span></div>${F.cuotas > 1 ? `<div class="field"><span class="label">Empieza a pagarse en</span><div class="stepper"><button type="button" class="iconbtn" data-act="inicuo" data-d="-1" aria-label="Un mes antes">${chev('M15 18l-6-6 6-6')}</button><span class="num" style="min-width:5.5em;text-align:center">${corto(F.inicioCuotas || mesDe(F.fecha))}</span><button type="button" class="iconbtn" data-act="inicuo" data-d="1" aria-label="Un mes después">${chev('M9 6l6 6-6 6')}</button></div><span class="note">Por ejemplo, si su tarjeta cierra antes de la compra, empieza el mes siguiente.</span></div>` : ''}` : ''}
     ${card && !F.plRef ? `<div class="two"><div class="field"><span class="label">Cuotas</span><div class="stepper"><button type="button" class="iconbtn" data-act="cuota" data-d="-1" aria-label="Menos cuotas">−</button><span class="num">${F.cuotas}</span><button type="button" class="iconbtn" data-act="cuota" data-d="1" aria-label="Más cuotas">+</button></div><span class="note num" id="f-cuota"></span></div>
@@ -3115,7 +3132,7 @@ function abrirPlant(p, re){
     ${P.tipo==='mover' ? `<div class="field"><span class="label">Sale de</span>${chipsDe('p', 'de', ctas, P.de)}</div><div class="field"><span class="label">Entra en</span>${chipsDe('p', 'a', ctas.filter(([id]) => id !== P.de), P.a)}</div>` : ''}
     <div class="two"><div class="field"><label for="p-monto">Monto habitual</label><input class="inp" id="p-monto" inputmode="decimal" value="${esc(P.montoTxt)}"></div>
       <div class="field"><span class="label">Moneda</span>${ms.length > 1 ? seg('p', 'moneda', ms.map(x => [x, monLbl(x)]), P.moneda) : `<span style="padding:10px 0;font-weight:600">${esc(MON(P.moneda).nombre)}</span>`}</div></div>
-    ${P.tipo === 'gasto' ? `<label class="check"><input type="checkbox" id="p-suminv" ${P.sumaInv ? 'checked' : ''}> También suma a mis inversiones (por ejemplo, la cuota de la hipoteca)</label>` : ''}
+    ${P.tipo === 'gasto' ? `<label class="check"><input type="checkbox" id="p-suminv" ${P.sumaInv ? 'checked' : ''}> Es inversión (por ejemplo, la cuota de la hipoteca): suma a la gráfica de inversiones</label>` : ''}
     ${P.id ? `<div class="field"><span class="label">Estado</span>${seg('p', 'activa', [['si','Activo'],['no','Pausado']], P.activa===false?'no':'si')}</div>` : ''}
     <div class="actions">${P.id ? `<button type="button" class="btn danger" data-act="pdel">Borrar</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>
   </form></div>`;
