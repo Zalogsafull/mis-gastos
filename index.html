@@ -1199,6 +1199,69 @@ async function aplicarAgregar(btn){
     toast(AGR.nuevos.length ? `Se agregaron ${AGR.nuevos.length} movimientos` : 'Listo, quedó corregido'); AGR = null; cerrar(); render();
   } catch(e){ registrarError('Agregar movimientos a la planilla', e, 'No se pudieron agregar. Probá de nuevo.'); btn.disabled = false; btn.textContent = 'Agregar'; }
 }
+// ---------- Recuperar de una versión anterior del archivo de Drive ----------
+// Drive guarda el historial del archivo. Se elige una versión y se recupera lo que tiene que ver con categorías: la lista de categorías
+// y la categoría (y la marca "Es inversión") de cada gasto, recurrente e ítem de la planilla. Lo demás (montos, gastos nuevos) no se toca.
+let REC = null;
+async function verVersiones(){
+  try {
+    if (!tokenValido()) await pedirToken('');
+    const id = await buscarArchivo(); if (!id){ toast('No encontré tu archivo en Drive'); return; }
+    const j = await (await gapi(`https://www.googleapis.com/drive/v3/files/${id}/revisions?pageSize=1000&fields=revisions(id,modifiedTime)`)).json();
+    const revs = (j.revisions || []).slice(0, -1).reverse().slice(0, 40); // la última es la actual
+    REC = {id, revs};
+    const f = t => new Date(t).toLocaleString('es-UY', {weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+    $('#overlay').innerHTML = `<div class="scrim" data-act="close"><div class="sheet anim" role="dialog" aria-modal="true" aria-label="Recuperar categorías">
+      <header><h3>Recuperar categorías</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
+      <p class="note" style="margin:0">Elegí una versión de tu archivo de Drive (la hora es la de cuando se guardó). Te muestro qué categorías cambiarían antes de hacer nada.</p>
+      <div class="list">${revs.map(r => `<button type="button" class="row click" data-act="recrev" data-r="${esc(r.id)}" style="text-align:left;width:100%;background:none;border:0"><div class="t">${esc(f(r.modifiedTime))}</div></button>`).join('') || '<p class="empty">No hay versiones anteriores.</p>'}</div>
+    </div></div>`;
+  } catch(e){ registrarError('Ver versiones de Drive', e, 'No se pudieron traer las versiones de Drive'); }
+}
+async function compararVersion(revId, btn){
+  try {
+    if (btn) btn.textContent = 'Comparando…';
+    const o = await (await gapi(`https://www.googleapis.com/drive/v3/files/${REC.id}/revisions/${revId}?alt=media`)).json();
+    const d = (o && o.datos) || {}, catsV = (((d.config || {}).app || {}).cats || []), clave = t => claveConcepto(t || ''), camb = [];
+    const difiere = (a, b) => a.cat !== b.cat || !!a.sumaInv !== !!b.sumaInv;
+    for (const [mid, mv] of Object.entries(d.movimientos || {})){ const m = S.movs.find(x => x.id === mid); if (m && mv && mv.tipo === m.tipo && difiere(mv, m)) camb.push({k:'mov', id:mid, cat:mv.cat, sumaInv:!!mv.sumaInv, txt:m.concepto || '', de:m.cat}); }
+    for (const [pid, pv] of Object.entries(d.recurrentes || {})){ const p = S.plant.find(x => x.id === pid); if (p && pv && pv.tipo === p.tipo && difiere(pv, p)) camb.push({k:'plant', id:pid, cat:pv.cat, sumaInv:!!pv.sumaInv, txt:(p.nombre || '') + ' (recurrente)', de:p.cat}); }
+    for (const [mk, pv] of Object.entries(d.planilla || {})){ const p = S.plan[mk]; if (!p || !pv) continue; const usados = new Set();
+      (p.items || []).forEach((it, i) => { const j = (pv.items || []).findIndex((x, n) => !usados.has(n) && x.tipo === it.tipo && clave(x.concepto) === clave(it.concepto) && Math.abs((+x.monto || 0) - (+it.monto || 0)) < 0.01 && (x.moneda || '') === (it.moneda || ''));
+        if (j < 0) return; usados.add(j); const x = pv.items[j]; if (difiere(x, it)) camb.push({k:'plan', mk, i, cat:x.cat, sumaInv:!!x.sumaInv, txt:`${it.concepto} (${nombreMes(mk)})`, de:it.cat}); }); }
+    const nomV = id => (catsV.find(c => c.id === id) || CAT(id) || {nombre:id}).nombre;
+    const catsDif = canon(catsV.map(c => [c.id, c.nombre, c.color, !!c.dia])) !== canon(CATS().map(c => [c.id, c.nombre, c.color, !!c.dia]));
+    REC.sel = {catsV, camb, catsDif};
+    const nuevas = catsV.filter(c => !CAT(c.id)), renom = catsV.filter(c => CAT(c.id) && CAT(c.id).nombre !== c.nombre), sobran = CATS().filter(c => !catsV.some(x => x.id === c.id));
+    $('#overlay').innerHTML = `<div class="scrim" data-act="close"><div class="sheet anim" role="dialog" aria-modal="true" aria-label="Recuperar categorías">
+      <header><h3>Recuperar categorías</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
+      ${!catsDif && !camb.length ? '<p class="empty">Esa versión tiene las mismas categorías que ahora. Probá con otra.</p>' : `
+      <p class="note" style="margin:0">Montos, fechas y gastos nuevos no se tocan.</p>
+      ${catsDif ? `<div class="list"><div class="row"><div class="t">Lista de categorías</div><div class="m">${[nuevas.length ? 'vuelven: ' + nuevas.map(c => esc(c.nombre)).join(', ') : '', renom.length ? 'nombre: ' + renom.map(c => esc(CAT(c.id).nombre) + ' → ' + esc(c.nombre)).join(', ') : '', sobran.length ? 'se quitan (si nada las usa): ' + sobran.map(c => esc(c.nombre)).join(', ') : ''].filter(Boolean).join(' · ') || 'colores u opciones'}</div></div></div>` : ''}
+      ${camb.length ? `<h3 class="label" style="margin:12px 0 4px">${camb.length} gastos vuelven a la categoría que tenían</h3><div class="list">${camb.slice(0, 60).map(c => `<div class="row"><div class="t">${esc(c.txt)}</div><div class="m">${esc(nomCat(c.de) || c.de || '—')} → ${esc(nomV(c.cat))}${c.sumaInv ? ' · es inversión' : ''}</div></div>`).join('')}${camb.length > 60 ? `<p class="note">y ${camb.length - 60} más</p>` : ''}</div>` : ''}
+      <div class="actions"><button type="button" class="btn ghost" data-act="recver">Otra versión</button><button type="button" class="btn primary" data-act="recok">Recuperar</button></div>`}
+    </div></div>`;
+  } catch(e){ registrarError('Comparar versión de Drive', e, 'No se pudo leer esa versión'); }
+}
+async function aplicarRecuperar(btn){
+  const R = REC && REC.sel; if (!R) return;
+  btn.disabled = true; btn.textContent = 'Recuperando…';
+  try {
+    if (R.catsDif){ // la lista de esa versión, más las de ahora que algo siga usando después de recuperar
+      const nueva = {}; for (const c of R.camb) nueva[c.k === 'plan' ? `${c.mk}:${c.i}` : c.id] = c.cat;
+      const usadas = new Set(S.movs.map(m => nueva[m.id] || m.cat).concat(S.plant.map(p => nueva[p.id] || p.cat), Object.entries(S.plan).flatMap(([mk, p]) => (p.items || []).map((it, i) => nueva[`${mk}:${i}`] || it.cat))));
+      const cats = R.catsV.map(c => ({...c})).concat(CATS().filter(c => !R.catsV.some(x => x.id === c.id) && usadas.has(c.id)));
+      if (!(await guardarCfg({cats}))) throw new Error('No se pudo guardar la lista de categorías');
+    }
+    for (const c of R.camb.filter(c => c.k === 'mov')) await S.db.collection(COL.movs).doc(c.id).update({cat:c.cat, sumaInv: c.sumaInv || null});
+    for (const c of R.camb.filter(c => c.k === 'plant')) await S.db.collection(COL.plant).doc(c.id).update({cat:c.cat, sumaInv: c.sumaInv || null});
+    const porMes = {}; for (const c of R.camb.filter(c => c.k === 'plan')) (porMes[c.mk] = porMes[c.mk] || []).push(c);
+    for (const [mk, cs] of Object.entries(porMes)){ const p = S.plan[mk], items = (p.items || []).map(it => ({...it}));
+      for (const c of cs){ items[c.i].cat = c.cat; if (c.sumaInv) items[c.i].sumaInv = true; else delete items[c.i].sumaInv; }
+      await S.db.collection('planilla').doc(mk).set({...p, items}); }
+    toast('Categorías recuperadas'); REC = null; cerrar(); render();
+  } catch(e){ registrarError('Recuperar categorías', e, 'No se pudo recuperar. Probá de nuevo.'); btn.disabled = false; btn.textContent = 'Recuperar'; }
+}
 // Pasar de la cuenta de Claude a este dispositivo (o al revés). Si el destino está vacío, copia los datos.
 async function cambiarModo(nuevo){
   if (nuevo === S.modo) return;
@@ -1219,7 +1282,10 @@ function registrarSW(){
 // Permiso drive.file: la app solo ve el archivo que ella misma crea (mis-gastos.json), nada más del Drive.
 const DRIVE = {cliente:'499878544628-pn1o30cvka3roletog6e2mio5atpo5io.apps.googleusercontent.com', scope:'https://www.googleapis.com/auth/drive.file', archivo:'mis-gastos.json'};
 const LSD = {conectado:'misgastos.drive', token:'misgastos.drive.token', archivoId:'misgastos.drive.id', ultima:'misgastos.drive.ultima', email:'misgastos.drive.email'};
-const D = {token:null, exp:0, pendiente:false, sincronizando:false, necesitaToque:false, error:'', timer:null};
+const D = {token:null, exp:0, pendiente:false, sincronizando:false, necesitaToque:false, error:'', timer:null, sincOk:false};
+// Con Drive conectado, nada se reescribe solo (migraciones) hasta haber traído lo de los otros dispositivos: si no, una versión vieja de este
+// teléfono, reescrita con la hora de ahora, le ganaría a los cambios hechos en otro lado.
+const puedeMigrar = () => !driveConectado() || D.sincOk;
 const lsDel = k => { try { localStorage.removeItem(k); } catch(e){} };
 const enWeb = () => location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 const driveDisponible = () => !!DRIVE.cliente && S.modo === 'local' && enWeb();
@@ -1295,7 +1361,7 @@ async function sincronizar(manual){
     if (!id || canon(fus) !== canon(rem)){ const {[META]: meta, ...datos} = fus; await subirArchivo(id, {app:'mis-gastos', formato:2, actualizado:new Date().toISOString(), datos, meta}); }
     try { await sincronizarCompartidos(manual); } catch(e){ registrarError('Sincronizar con personas', e, manual ? 'No se pudo sincronizar lo compartido. Probá de nuevo.' : null); }
     try { await sincronizarGrupos(manual); } catch(e){ registrarError('Sincronizar grupos', e, manual ? 'No se pudo sincronizar un grupo. Probá de nuevo.' : null); }
-    D.pendiente = false; D.necesitaToque = false; lsSet(LSD.ultima, String(Date.now()));
+    D.pendiente = false; D.necesitaToque = false; D.sincOk = true; lsSet(LSD.ultima, String(Date.now()));
     if (manual) toast(cambiosDeDrive ? 'Sincronizado: trajo cambios de Drive' : 'Sincronizado con Drive');
   } catch(e){
     if (e && e.code === 'token'){ D.necesitaToque = true; if (manual) toast('Tocá Sincronizar para volver a dar permiso'); }
@@ -1976,9 +2042,9 @@ function render(){
   if (S.view === 'analisis') dibujarGraficas();
   if (S.view === 'eventos' && $('#chv')) dibujarViaje();
   mostrarElegidos($('#main'));
-  if (!MIGINV && Object.values(S.ready).every(Boolean) && CATS().some(c => esInv(c.id))) setTimeout(migrarInversiones, 120);
-  if (!MIGVJ && Object.values(S.ready).every(Boolean) && (S.evs || []).some(e => e.tipo === 'viaje')) setTimeout(migrarViajes, 80);
-  if (!S.cfg.migRec && !MIGREC && Object.values(S.ready).every(Boolean) && ((S.cfg.cats || []).some(c => c.id === 'Fijos') || (S.cfg.subs || []).length)) setTimeout(migrarRecurrentes, 50);
+  if (!MIGINV && puedeMigrar() && Object.values(S.ready).every(Boolean) && CATS().some(c => esInv(c.id))) setTimeout(migrarInversiones, 120);
+  if (!MIGVJ && puedeMigrar() && Object.values(S.ready).every(Boolean) && (S.evs || []).some(e => e.tipo === 'viaje')) setTimeout(migrarViajes, 80);
+  if (!S.cfg.migRec && !MIGREC && puedeMigrar() && Object.values(S.ready).every(Boolean) && ((S.cfg.cats || []).some(c => c.id === 'Fijos') || (S.cfg.subs || []).length)) setTimeout(migrarRecurrentes, 50);
   if (lsGet(LS_UNIRSE) && !S.unirseVisto && S.modo === 'local' && Object.values(S.ready).every(Boolean) && !$('#overlay').innerHTML){ S.unirseVisto = true; setTimeout(abrirUnirse, 300); }
 }
 function banner(){
@@ -2636,7 +2702,7 @@ function vAjustes(){
     <p class="note" style="margin:${S.claudeDB ? '8px' : '0'} 0 10px">${driveConectado() ? 'También podés exportar una copia de seguridad en un archivo cuando quieras.' : S.modo === 'local'
       ? 'Se guardan solo en este dispositivo, en la base de datos del navegador, y funcionan sin internet. Si cambiás de teléfono, borrás los datos del navegador o desinstalás la app, se pierden: exportá una copia de seguridad de vez en cuando.'
       : 'Se guardan en tu cuenta de Claude y los ves desde cualquier dispositivo donde abras esta app.'}${S.claudeDB ? ' Al cambiar de lugar, si el destino está vacío, se copian tus datos.' : ''}</p>
-    <div class="filters"><button class="btn primary" data-act="respaldo">Exportar copia de seguridad</button><button class="btn" data-act="importar">Importar copia o movimientos</button><button class="btn" data-act="csv">Movimientos para Excel (.csv)</button></div>
+    <div class="filters"><button class="btn primary" data-act="respaldo">Exportar copia de seguridad</button><button class="btn" data-act="importar">Importar copia o movimientos</button><button class="btn" data-act="csv">Movimientos para Excel (.csv)</button>${driveConectado() ? '<button class="btn" data-act="recver">Recuperar categorías de una versión anterior</button>' : ''}</div>
     <input type="file" id="imp-file" accept=".json,application/json" hidden>
     <p class="note">Última copia: ${lsGet(LS.respaldo) ? dia(lsGet(LS.respaldo)) : 'nunca'}. La copia es un archivo .json con todo: cuentas, tarjetas, movimientos, recurrentes y ajustes. Para pasarte a otro teléfono: exportala, guardala o mandátela (Drive, correo, WhatsApp) e importala en el teléfono nuevo.</p></section>
   <section class="panel"><h2>Usarla como app en el celular</h2>
@@ -3983,6 +4049,9 @@ document.addEventListener('click', async ev => {
     nuevoForm({...b, estado:'pagado', }); return;
   }
   if (a === 'compartir'){ abrirCompartir(t.dataset.pId); return; }
+  if (a === 'recver'){ verVersiones(); return; }
+  if (a === 'recrev'){ compararVersion(t.dataset.r, t); return; }
+  if (a === 'recok'){ aplicarRecuperar(t); return; }
   if (a === 'errcopiar'){ try { await navigator.clipboard.writeText(erroresGuardados().map(x => `${new Date(x.t).toISOString()} · ${x.donde} · ${x.msg}`).join('\n')); toast('Registro copiado'); } catch(e){ toast('No se pudo copiar'); } return; }
   if (a === 'errborrar'){ try { localStorage.removeItem(LS_ERR); } catch(e){} render(); return; }
   if (a === 'ansolo'){ const ch = t.dataset.ch || 'ch1', id = t.dataset.id, o = {...(S.anSolo || {})}; o[ch] = !id || o[ch] === id ? null : id; S.anSolo = o; const y = window.scrollY; render(); window.scrollTo(0, y); return; }
