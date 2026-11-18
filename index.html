@@ -224,6 +224,10 @@ details.mini[open] summary::before{transform:rotate(90deg)}
 .minibars .mb i{height:5px;border-radius:3px;background:var(--line);overflow:hidden}
 .minibars .mb i b{display:block;height:100%;border-radius:3px}
 .antop{position:sticky;top:0;z-index:6;background:var(--bg);padding:8px 0;margin-top:-8px}
+.mesesrec{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.mesesrec .mr{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--muted);font:600 11px var(--f-body);cursor:pointer;padding:0}
+.mesesrec .mr[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.mesesrec .lnk{font-size:12px;margin-left:6px}
 .checks{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .checks .check{flex:1 1 0;min-width:max-content;margin:0}
 .legend .legbtn{background:none;border:0;padding:4px 2px;margin:-4px 0;font:inherit;color:inherit;cursor:pointer;border-radius:6px}
@@ -647,6 +651,8 @@ function itemsDelMes(mk){
 // Compatibilidad: en la versión personal el BHU venía marcado con esBHU (gasto) y bhu (sueldo), con la cuota en cfg.bhuUI.
 const descuentaDe = p => p.descuentaDe || (p.esBHU ? (S.plant.find(x => x.tipo === 'ingreso' && x.bhu) || {}).id || null : null);
 const valorDesc = p => (p.esBHU && !p.descuentaDe && +S.cfg.bhuUI && S.cfg.monedas.some(m => m.id === 'UI')) ? {monto:+S.cfg.bhuUI, moneda:'UI'} : {monto:+p.monto || 0, moneda:p.moneda};
+// Meses en que corre un recurrente: sin elegir = todos; si no, solo los marcados (1 = enero … 12 = diciembre)
+const enMesP = (p, mk) => !Array.isArray(p.meses) || !p.meses.length || p.meses.includes(+mk.slice(5, 7));
 const descuentosDe = id => id ? S.plant.filter(p => p.tipo === 'gasto' && p.activa !== false && descuentaDe(p) === id) : [];
 const descOmitido = (d, mk) => !!mk && S.movs.some(m => m.plantilla === d.id && mesDe(m.fecha) === mk && m.estado === 'omitido');
 const totalDesc = (id, mk) => descuentosDe(id).reduce((a, p) => { if (descOmitido(p, mk)) return a; const v = valorDesc(p); return a + v.monto * tasaDe(v.moneda); }, 0); // en moneda principal
@@ -725,7 +731,7 @@ function pendientes(mk){
   const list = [];
   if (mk < inicio()) return list;
   for (const x of itemsDelMes(mk)) if (x.m.estado === 'pend') list.push({kind:'mov', m:x.m, uyu:x.uyu});
-  for (const p of S.plant) if (p.activa !== false && !(p.desde && mk < p.desde) && !plantHecha(p, mk)) list.push({kind:'plant', p, uyu: toBase(p) + (p.tipo === 'ingreso' ? Math.round(totalDesc(p.id, mk)) : 0)});
+  for (const p of S.plant) if (p.activa !== false && !(p.desde && mk < p.desde) && enMesP(p, mk) && !plantHecha(p, mk)) list.push({kind:'plant', p, uyu: toBase(p) + (p.tipo === 'ingreso' ? Math.round(totalDesc(p.id, mk)) : 0)});
   // Pago estimado de cada tarjeta: las cuotas de su resumen anterior menos lo que ya pagaste o tenés cargado este mes
   const pagosDe = tid => S.movs.filter(m => m.tipo === 'pago' && m.tarjeta === tid && mesDe(m.fecha) === mk && m.estado !== 'omitido');
   if (addMes(mk,-1) < inicio()){
@@ -861,7 +867,7 @@ const enMesPer = (m, pid, mk) => efectoPersona(m, pid, mk) - efectoPersona(m, pi
 const recPer = p => (p.tipo === 'ingreso' || p.tipo === 'gasto') && p.persona && PER(p.persona) && p.activa !== false;
 function obligaciones(pid, mk){
   if (mk < inicio()) return [];
-  return S.plant.filter(p => recPer(p) && p.persona === pid && !(p.desde && mk < p.desde) && !S.movs.some(m => m.plantilla === p.id && mesDe(m.fecha) === mk && (m.estado === 'pagado' || m.estado === 'omitido' || m.sh))) // m.sh: la otra persona ya lo marcó como pagado
+  return S.plant.filter(p => recPer(p) && p.persona === pid && !(p.desde && mk < p.desde) && enMesP(p, mk) && !S.movs.some(m => m.plantilla === p.id && mesDe(m.fecha) === mk && (m.estado === 'pagado' || m.estado === 'omitido' || m.sh))) // m.sh: la otra persona ya lo marcó como pagado
     .map(p => ({p, v: (p.tipo === 'ingreso' ? 1 : -1) * (p.monto || 0) * tasaDe(p.moneda)}));
 }
 const balanceMes = (pid, mk) => { mk = mk || hoyMes(); return balancePersona(pid, mk) - balancePersona(pid, addMes(mk, -1)) + obligaciones(pid, mk).reduce((a, o) => a + o.v, 0); };
@@ -2722,7 +2728,7 @@ function abrirAyuda(){
         <li><strong>Monedas</strong>: la primera es la principal y todo se suma en ella. Agregá las otras que uses con su cotización.</li>
         <li><strong>Cuentas</strong>: renombrá las de ejemplo o creá las tuyas. Elegí si son del día a día o de ahorro, qué monedas tienen y cuánto tienen hoy.</li>
         <li><strong>Tarjetas</strong>: nombre, monedas, día de cierre, día de vencimiento y desde qué cuenta la pagás.</li>
-        <li><strong>Gastos recurrentes</strong>: lo que se repite todos los meses (alquiler, servicios, sueldo, ahorro mensual).</li>
+        <li><strong>Gastos recurrentes</strong>: lo que se repite todos los meses (alquiler, servicios, sueldo, ahorro mensual). Si algo no se cobra todos los meses, en <em>Meses</em> tocá los meses en que va, o <em>Mes por medio</em>.</li>
         <li><strong>Presupuesto</strong> (opcional): cuánto pensás gastar por mes en el día a día.</li></ol></div>
       <div><h4>2. Cargá tus movimientos</h4><ul>
         <li>Con el botón <strong>+</strong>: Gasto, Ingreso, Transferir o Pagar tarjeta.</li>
@@ -3206,6 +3212,11 @@ function abrirPlant(p, re){
     ${P.tipo==='mover' ? `<div class="field"><span class="label">Sale de</span>${chipsDe('p', 'de', ctas, P.de)}</div><div class="field"><span class="label">Entra en</span>${chipsDe('p', 'a', ctas.filter(([id]) => id !== P.de), P.a)}</div>` : ''}
     <div class="two"><div class="field"><label for="p-monto">Monto habitual</label><input class="inp" id="p-monto" inputmode="decimal" value="${esc(P.montoTxt)}"></div>
       <div class="field"><span class="label">Moneda</span>${ms.length > 1 ? seg('p', 'moneda', ms.map(x => [x, monLbl(x)]), P.moneda) : `<span style="padding:10px 0;font-weight:600">${esc(MON(P.moneda).nombre)}</span>`}</div></div>
+    ${(() => { const on = m => !Array.isArray(P.meses) || !P.meses.length || P.meses.includes(m), L = ['E','F','M','A','M','J','J','A','S','O','N','D'];
+      const todos = !Array.isArray(P.meses) || !P.meses.length || P.meses.length === 12;
+      return `<div class="field"><span class="label">Meses <span class="note" style="text-transform:none;letter-spacing:0">${todos ? '· todos los meses' : '· ' + P.meses.length + (P.meses.length === 1 ? ' mes' : ' meses')}</span></span>
+        <div class="mesesrec">${L.map((l, i) => `<button type="button" class="mr" data-p="mes" data-v="${i + 1}" aria-pressed="${on(i + 1)}" title="${esc(nombreMes(`2026-${String(i + 1).padStart(2, '0')}`).split(' ')[0])}">${l}</button>`).join('')}
+          <button type="button" class="lnk" data-p="mespre" data-v="todos">Todos</button><button type="button" class="lnk" data-p="mespre" data-v="medio">Mes por medio</button></div></div>`; })()}
     ${P.tipo === 'gasto' ? `<label class="check"><input type="checkbox" id="p-suminv" ${P.sumaInv ? 'checked' : ''}> Es inversión</label>` : ''}
     ${P.id ? `<div class="field"><span class="label">Estado</span>${seg('p', 'activa', [['si','Activo'],['no','Pausado']], P.activa===false?'no':'si')}</div>` : ''}
     <div class="actions">${P.id ? `<button type="button" class="btn danger" data-act="pdel">Borrar</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>
@@ -3222,6 +3233,7 @@ async function enviarPlant(){
   if (P.id){ if (P.desde) data.desde = P.desde; } else data.desde = S.mes && S.mes < hoyMes() ? S.mes : hoyMes();
   if (P.tipo === 'mover' && P.modo) data.modo = P.modo;
   { const pv = P.id && S.plant.find(x => x.id === P.id); if (pv && pv.sh) data.sh = pv.sh; } // sigue vinculado al archivo compartido
+  data.meses = Array.isArray(P.meses) && P.meses.length && P.meses.length < 12 ? P.meses : null;
   if (P.tipo === 'gasto'){ data.sumaInv = P.sumaInv ? true : null; data.sub = null; data.cat = CAT(P.cat) ? P.cat : catDefecto(); data.tarjeta = P.tarjeta || null; data.cuenta = P.tarjeta ? null : P.cuenta; data.descuentaDe = P.descuentaDe && S.plant.some(x => x.id === P.descuentaDe) ? P.descuentaDe : null; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
   else if (P.tipo === 'ingreso'){ data.cuenta = P.cuenta; if (P.bhu) data.bhu = true; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
   else { data.de = P.de; data.a = P.a; const ma = monedasDe('c', P.a); data.monA = ma.includes(P.moneda) ? P.moneda : (ma.includes(monP().id) ? monP().id : ma[0]); }
@@ -3924,6 +3936,9 @@ document.addEventListener('click', async ev => {
     leerPlant();
     const k = t.dataset.p, v = t.dataset.v;
     if (k === 'activa') P.activa = v === 'si';
+    else if (k === 'mes'){ const m = +v, cur = Array.isArray(P.meses) && P.meses.length ? P.meses : [1,2,3,4,5,6,7,8,9,10,11,12], nue = cur.includes(m) ? cur.filter(x => x !== m) : cur.concat([m]).sort((a, b) => a - b);
+      P.meses = nue.length === 12 || !nue.length ? null : nue; }
+    else if (k === 'mespre'){ if (v === 'todos') P.meses = null; else { const ini = +((P.desde || hoyMes()).slice(5, 7)); P.meses = [0,2,4,6,8,10].map(d => ((ini - 1 + d) % 12) + 1).sort((a, b) => a - b); } } // mes por medio desde el mes en que empieza
     else if (k === 'medio'){ if (v.startsWith('t:')) P.tarjeta = v.slice(2); else { P.tarjeta = null; P.cuenta = v.slice(2); } }
     else P[k] = v;
     if (k === 'tipo'){ P.tarjeta = null; if (v === 'mover' && !P.a) P.a = (S.cfg.cuentas.find(c => c.tipo === 'ahorro' && c.id !== P.de) || S.cfg.cuentas.find(c => c.id !== P.de) || {}).id || null; }
