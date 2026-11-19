@@ -150,6 +150,11 @@ main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px
 .neg{color:var(--ink)} .pos{color:var(--good)}
 .pill{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
 .pill.pend{background:var(--pend-soft);color:var(--pend)}
+.vt{color:var(--pend);font-weight:600} .vt.bad{color:var(--bad)}
+.pill.venc{background:var(--bad-soft);color:var(--bad)}
+.field.vence{display:grid;grid-template-columns:auto 64px 1fr;align-items:center;gap:4px 10px}
+.field.vence .inp{padding:6px 8px;text-align:center}
+.field.vence .note{font-size:11px}
 .pill.card{background:color-mix(in srgb,var(--c-tarjeta) 16%,transparent);color:var(--c-tarjeta)}
 .pill.est{background:var(--raise);color:var(--muted)}
 .prow{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
@@ -653,6 +658,15 @@ const descuentaDe = p => p.descuentaDe || (p.esBHU ? (S.plant.find(x => x.tipo =
 const valorDesc = p => (p.esBHU && !p.descuentaDe && +S.cfg.bhuUI && S.cfg.monedas.some(m => m.id === 'UI')) ? {monto:+S.cfg.bhuUI, moneda:'UI'} : {monto:+p.monto || 0, moneda:p.moneda};
 // Meses en que corre un recurrente: sin elegir = todos; si no, solo los marcados (1 = enero … 12 = diciembre)
 const enMesP = (p, mk) => !Array.isArray(p.meses) || !p.meses.length || p.meses.includes(+mk.slice(5, 7));
+// Vencimiento de un recurrente (día del mes). Aviso discreto solo en el mes actual y mientras esté pendiente:
+// faltan 5 días o menos → "vence en N días" / "mañana" / "hoy"; pasado → "venció".
+function vencInfo(p, mk){
+  if (!p || !(+p.vence) || mk !== hoyMes()) return null;
+  const ult = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate(), d = Math.min(+p.vence, ult), n = d - +hoy().slice(8, 10);
+  const txt = n < 0 ? (n === -1 ? 'venció ayer' : `venció hace ${-n} días`) : n === 0 ? 'vence hoy' : n === 1 ? 'vence mañana' : `vence en ${n} días`;
+  return {n, d, txt, cerca: n <= 5};
+}
+const vencTxt = (p, mk) => { const v = vencInfo(p, mk); return v && v.cerca ? `<span class="vt${v.n < 0 ? ' bad' : ''}">${v.txt}</span> · ` : ''; };
 const descuentosDe = id => id ? S.plant.filter(p => p.tipo === 'gasto' && p.activa !== false && descuentaDe(p) === id) : [];
 const descOmitido = (d, mk) => !!mk && S.movs.some(m => m.plantilla === d.id && mesDe(m.fecha) === mk && m.estado === 'omitido');
 const totalDesc = (id, mk) => descuentosDe(id).reduce((a, p) => { if (descOmitido(p, mk)) return a; const v = valorDesc(p); return a + v.monto * tasaDe(v.moneda); }, 0); // en moneda principal
@@ -2083,12 +2097,14 @@ function filaMov(x){
   const extra = [];
   if (x.cuotas > 1 && x.cuota) extra.push(`<span class="pill card">${x.cuota}/${x.cuotas}</span>`);
   else if (isCard(m)) extra.push(`<span class="pill card">${esc(nomTj(m.tarjeta))}</span>`);
-  if (m.estado === 'pend') extra.push(`<span class="pill pend">Pendiente</span>`);
+  const vp = m.estado === 'pend' && (m.pid || m.plantilla) ? vencInfo(S.plant.find(x => x.id === (m.pid || m.plantilla)), mesDe(m.fecha) || S.mes) : null;
+  if (m.estado === 'pend') extra.push(vp && vp.cerca ? `<span class="pill ${vp.n < 0 ? 'venc' : 'pend'}">${vp.txt}</span>` : `<span class="pill pend">Pendiente</span>`);
   if (m.evento && EV(m.evento)) extra.push(`<span class="pill ev">${esc(EV(m.evento).nombre)}</span>`);
   if (m.split && (m.split.con || []).length) extra.push(`<span class="pill est">${m.split.modo === 'pedido' ? 'Se lo pedí a ' + esc(nomPer(m.split.pagador)) : pagoOtro(m) ? 'Pagó ' + esc(nomPer(m.split.pagador)) : m.split.modo === 'prestado' ? 'Prestado a ' + esc(nomPer(m.split.con[0])) : 'Dividido con ' + esc(m.split.con.map(nomPer).join(', '))}</span>`);
   if (m.cargo) extra.push(`<span class="pill est">${m.estado === 'pend' ? (m.tipo === 'ingreso' ? 'Te lo paga ' : 'Se lo pagás a ') : m.compensado ? 'Descontado con ' : m.tipo === 'ingreso' ? 'Me pagó ' : 'Le pagué a '}${esc(nomPer(m.cargo))}</span>`);
   if (m.saldo) extra.push(`<span class="pill est">${m.tipo === 'ingreso' ? 'Me pagó ' : 'Le pagué a '}${esc(nomPer(m.saldo))}</span>`);
-  const meta = [x.ef, m.virtual === 'plant' ? 'monto habitual' : m.virtual ? 'este mes' : dia(m.fecha), etiqueta(m), isCard(m) ? '' : medioTxt(m), !esPpal(m.moneda) ? fmtM(m) + (x.cuotas>1?' total':'') : '', m.traslado && +m.traslado.monto ? (m.traslado.monto > 0 ? `pasan ${fmtEn(m.traslado.monto, m.traslado.moneda)} al mes siguiente` : `${fmtEn(-m.traslado.monto, m.traslado.moneda)} a favor para el mes siguiente`) : ''].filter(Boolean).join(' · ');
+  const pv = m.virtual === 'plant' && S.plant.find(x => x.id === m.pid);
+  const meta = [x.ef, m.virtual === 'plant' ? (pv && +pv.vence ? 'vence el ' + pv.vence : 'monto habitual') : m.virtual ? 'este mes' : dia(m.fecha), etiqueta(m), isCard(m) ? '' : medioTxt(m), !esPpal(m.moneda) ? fmtM(m) + (x.cuotas>1?' total':'') : '', m.traslado && +m.traslado.monto ? (m.traslado.monto > 0 ? `pasan ${fmtEn(m.traslado.monto, m.traslado.moneda)} al mes siguiente` : `${fmtEn(-m.traslado.monto, m.traslado.moneda)} a favor para el mes siguiente`) : ''].filter(Boolean).join(' · ');
   return `<div class="row click" ${accionFila(x)}><div class="t">${esc(m.concepto || TIPOS[m.tipo] || '')}${extra.join('')}</div><div class="m">${esc(meta)}</div><div class="a num ${pos?'pos':''}">${pos?'+ ':''}${fmt(x.uyu)}</div></div>`;
 }
 
@@ -2118,10 +2134,10 @@ function vInicio(){
     if (p.kind === 'cob') return `<div class="prow"><div class="t" data-act="ir" data-filtro="persona:${p.persona}">Cobrarle a ${esc(nomPer(p.persona))}<small>Gastos compartidos de este mes</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="saldar" data-p-id="${p.persona}" data-dir="recibi" data-v="${p.monto}">Cobrado</button><span></span></div>`;
     if (p.kind === 'per') return `<div class="prow"><div class="t" data-act="ir" data-filtro="persona:${p.persona}">Pagarle a ${esc(nomPer(p.persona))}<small>Gastos compartidos de este mes</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="saldar" data-p-id="${p.persona}" data-dir="pague" data-v="${p.monto}">Pagar</button><span></span></div>`;
     if (p.kind === 'est') return `<div class="prow"><div class="t" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pago ${esc(nomTj(p.tarjeta))}${esPpal(p.mon) ? '' : ` en ${esc(MON(p.mon).nombre.toLowerCase())}`}<small>${p.parcial ? 'Lo que falta del resumen de ' : 'Estimado con las cuotas de '}${nombreMes(addMes(mk,-1)).toLowerCase()}${p.entra > 0.004 ? ` + ${fmtEn(p.entra, p.mon)} que pasaron del mes anterior` : p.entra < -0.004 ? ` − ${fmtEn(-p.entra, p.mon)} a favor del mes anterior` : ''}${esPpal(p.mon) ? '' : ` · ≈ ${fmt(p.uyu)}`}</small></div><span class="num">${fmtEn(p.monto, p.mon)}</span><button class="btn ok" data-act="pagoest" data-tj="${p.tarjeta}" data-mon="${p.mon}" data-v="${p.monto}">Pagar</button><button class="btn ghost" data-act="estquitar" data-tj="${p.tarjeta}" data-mon="${p.mon}" aria-label="No corresponde: quitar este estimado">Quitar</button></div>`;
-    if (p.kind === 'mov') return `<div class="prow"><div class="t" data-act="edit" data-id="${p.m.id}">${esc(p.m.concepto)}<small>${esc(etiqueta(p.m))}${!esPpal(p.m.moneda)?' · '+fmtM(p.m):''}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="pagar" data-id="${p.m.id}">${okTxt(p.m.tipo)}</button><span></span></div>`;
+    if (p.kind === 'mov') return `<div class="prow"><div class="t" data-act="edit" data-id="${p.m.id}">${esc(p.m.concepto)}<small>${p.m.plantilla ? vencTxt(S.plant.find(x => x.id === p.m.plantilla), mk) : ''}${esc(etiqueta(p.m))}${!esPpal(p.m.moneda)?' · '+fmtM(p.m):''}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="pagar" data-id="${p.m.id}">${okTxt(p.m.tipo)}</button><span></span></div>`;
     const t = p.p;
     const sub = `${t.tipo==='gasto' ? (t.tarjeta ? nomTj(t.tarjeta) : nomCat(t.cat)) + (t.persona && PER(t.persona) ? ' · a ' + nomPer(t.persona) : '') : t.tipo==='mover' ? `${nomCta(t.de)} → ${nomCta(t.a)}` : t.persona && PER(t.persona) ? 'Te lo paga ' + nomPer(t.persona) : 'Ingreso'} · ${t.tipo === 'ingreso' && descuentosDe(t.id).length && totalDesc(t.id, mk) >= 1 ? `neto ${fmtM(t)} + descuentos ${fmt(totalDesc(t.id, mk))}` : esPpal(t.moneda) ? 'monto habitual' : fmtM(t)}`;
-    return `<div class="prow"><div class="t" data-act="plantform" data-id="${t.id}">${esc(t.nombre)}<small>${esc(sub)}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="${(t.tipo === 'ingreso' && descuentosDe(t.id).length) || (t.persona && PER(t.persona) && t.tipo !== 'mover') ? 'plantform' : 'plantok'}" data-id="${t.id}">${okTxt(t.tipo)}</button><button class="btn ghost" data-act="plantskip" data-id="${t.id}" aria-label="No aplica este mes">Omitir</button></div>`;
+    return `<div class="prow"><div class="t" data-act="plantform" data-id="${t.id}">${esc(t.nombre)}<small>${vencTxt(t, mk)}${esc(sub)}${+t.vence && !vencTxt(t, mk) ? ' · vence el ' + Math.min(+t.vence, 31) : ''}</small></div><span class="num">${fmt(p.uyu)}</span><button class="btn ok" data-act="${(t.tipo === 'ingreso' && descuentosDe(t.id).length) || (t.persona && PER(t.persona) && t.tipo !== 'mover') ? 'plantform' : 'plantok'}" data-id="${t.id}">${okTxt(t.tipo)}</button><button class="btn ghost" data-act="plantskip" data-id="${t.id}" aria-label="No aplica este mes">Omitir</button></div>`;
   };
   const orden = {ingreso:0, gasto:1, pago:2, mover:3};
   const tipoDe = p => p.kind === 'est' ? 'pago' : p.kind === 'per' ? 'gasto' : p.kind === 'cob' ? 'ingreso' : (p.m || p.p).tipo;
@@ -2728,7 +2744,7 @@ function abrirAyuda(){
         <li><strong>Monedas</strong>: la primera es la principal y todo se suma en ella. Agregá las otras que uses con su cotización.</li>
         <li><strong>Cuentas</strong>: renombrá las de ejemplo o creá las tuyas. Elegí si son del día a día o de ahorro, qué monedas tienen y cuánto tienen hoy.</li>
         <li><strong>Tarjetas</strong>: nombre, monedas, día de cierre, día de vencimiento y desde qué cuenta la pagás.</li>
-        <li><strong>Gastos recurrentes</strong>: lo que se repite todos los meses (alquiler, servicios, sueldo, ahorro mensual). Si algo no se cobra todos los meses, en <em>Meses</em> tocá los meses en que va, o <em>Mes por medio</em>.</li>
+        <li><strong>Gastos recurrentes</strong>: lo que se repite todos los meses (alquiler, servicios, sueldo, ahorro mensual). Si algo no se cobra todos los meses, en <em>Meses</em> tocá los meses en que va, o <em>Mes por medio</em>. Con <em>Vence el día</em>, cuando falten 5 días o menos y todavía esté pendiente, aparece un aviso chiquito (“vence en 3 días”, “vence hoy”, “venció”).</li>
         <li><strong>Presupuesto</strong> (opcional): cuánto pensás gastar por mes en el día a día.</li></ol></div>
       <div><h4>2. Cargá tus movimientos</h4><ul>
         <li>Con el botón <strong>+</strong>: Gasto, Ingreso, Transferir o Pagar tarjeta.</li>
@@ -3217,12 +3233,13 @@ function abrirPlant(p, re){
       return `<div class="field"><span class="label">Meses <span class="note" style="text-transform:none;letter-spacing:0">${todos ? '· todos los meses' : '· ' + P.meses.length + (P.meses.length === 1 ? ' mes' : ' meses')}</span></span>
         <div class="mesesrec">${L.map((l, i) => `<button type="button" class="mr" data-p="mes" data-v="${i + 1}" aria-pressed="${on(i + 1)}" title="${esc(nombreMes(`2026-${String(i + 1).padStart(2, '0')}`).split(' ')[0])}">${l}</button>`).join('')}
           <button type="button" class="lnk" data-p="mespre" data-v="todos">Todos</button><button type="button" class="lnk" data-p="mespre" data-v="medio">Mes por medio</button></div></div>`; })()}
+    <div class="field vence"><label for="p-vence">Vence el día</label><input class="inp" id="p-vence" type="number" inputmode="numeric" min="1" max="31" placeholder="—" value="${+P.vence || ''}"><span class="note">Opcional: te avisa unos días antes, mientras esté pendiente</span></div>
     ${P.tipo === 'gasto' ? `<label class="check"><input type="checkbox" id="p-suminv" ${P.sumaInv ? 'checked' : ''}> Es inversión</label>` : ''}
     ${P.id ? `<div class="field"><span class="label">Estado</span>${seg('p', 'activa', [['si','Activo'],['no','Pausado']], P.activa===false?'no':'si')}</div>` : ''}
     <div class="actions">${P.id ? `<button type="button" class="btn danger" data-act="pdel">Borrar</button>` : ''}<button type="submit" class="btn primary">Guardar</button></div>
   </form></div>`;
 }
-function leerPlant(){ P.nombre = $('#p-nombre')?.value ?? P.nombre; P.montoTxt = $('#p-monto')?.value ?? P.montoTxt; const si = $('#p-suminv'); if (si) P.sumaInv = si.checked; }
+function leerPlant(){ P.nombre = $('#p-nombre')?.value ?? P.nombre; P.montoTxt = $('#p-monto')?.value ?? P.montoTxt; const ve = $('#p-vence'); if (ve) P.vence = Math.max(0, Math.min(31, Math.round(+ve.value || 0))) || null; const si = $('#p-suminv'); if (si) P.sumaInv = si.checked; }
 async function enviarPlant(){
   leerPlant(); P.nombre = P.nombre.trim();
   const monto = parseNum(P.montoTxt);
@@ -3233,6 +3250,7 @@ async function enviarPlant(){
   if (P.id){ if (P.desde) data.desde = P.desde; } else data.desde = S.mes && S.mes < hoyMes() ? S.mes : hoyMes();
   if (P.tipo === 'mover' && P.modo) data.modo = P.modo;
   { const pv = P.id && S.plant.find(x => x.id === P.id); if (pv && pv.sh) data.sh = pv.sh; } // sigue vinculado al archivo compartido
+  data.vence = +P.vence || null;
   data.meses = Array.isArray(P.meses) && P.meses.length && P.meses.length < 12 ? P.meses : null;
   if (P.tipo === 'gasto'){ data.sumaInv = P.sumaInv ? true : null; data.sub = null; data.cat = CAT(P.cat) ? P.cat : catDefecto(); data.tarjeta = P.tarjeta || null; data.cuenta = P.tarjeta ? null : P.cuenta; data.descuentaDe = P.descuentaDe && S.plant.some(x => x.id === P.descuentaDe) ? P.descuentaDe : null; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
   else if (P.tipo === 'ingreso'){ data.cuenta = P.cuenta; if (P.bhu) data.bhu = true; data.persona = P.persona && PER(P.persona) ? P.persona : null; }
