@@ -150,6 +150,7 @@ main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px
 .neg{color:var(--ink)} .pos{color:var(--good)}
 .pill{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
 .pill.pend{background:var(--pend-soft);color:var(--pend)}
+.nw{white-space:nowrap} .desmon{margin:-6px 0 8px;text-align:right;font-size:12px;color:var(--muted)}
 .vt{color:var(--pend);font-weight:600} .vt.bad{color:var(--bad)}
 .pill.venc{background:var(--bad-soft);color:var(--bad)}
 .field.vence{display:grid;grid-template-columns:auto 64px 1fr;align-items:center;gap:4px 10px}
@@ -550,6 +551,17 @@ const tasaDe = id => esPpal(id) ? 1 : (+MON(id).tasa || 0);
 const fmtEn = (n, id) => { const p = esPpal(id); const v = p ? Math.round(n||0) : Math.round((n||0)*100)/100; return (v < 0 ? '−' : '') + MON(id).simbolo + ' ' + nf(Math.abs(v), p ? 0 : 2); };
 const fmt = n => fmtEn(n, monP().id);
 const fmtM = m => fmtEn(m.monto, m.moneda);
+// Desglose por moneda original. Se acumula con sumMon(t, moneda, monto en esa moneda) y se muestra con txtMon:
+// "US$ 200 + $ 4.000". Si todo es en la moneda principal devuelve '' (alcanza con el total de siempre).
+const natDe = (m, v) => esPpal(m.moneda) ? v : v / ((m.tasa || tasaDe(m.moneda)) || 1); // un valor en moneda principal, pasado a la moneda del movimiento
+const desMon = d => d ? `<p class="desmon num">${d}</p>` : ''; // línea chica bajo un total
+const sumMon = (t, mon, v) => { mon = mon || monP().id; t[mon] = (t[mon] || 0) + (+v || 0); return t; };
+function txtMon(t, signo = 1){
+  const ks = Object.keys(t).filter(k => Math.abs(t[k]) >= (esPpal(k) ? 0.5 : 0.005));
+  if (!ks.length || (ks.length === 1 && esPpal(ks[0]))) return '';
+  const orden = S.cfg.monedas.map(m => m.id); ks.sort((a, b) => (esPpal(a) - esPpal(b)) || orden.indexOf(a) - orden.indexOf(b));
+  return ks.map((k, i) => { const v = t[k] * signo; return (i ? (v < 0 ? ' − ' : ' + ') : '') + `<span class="nw">${fmtEn(i ? Math.abs(v) : v, k)}</span>`; }).join('');
+}
 const toBase = m => (m.monto||0) * (esPpal(m.moneda) ? 1 : (m.tasa || tasaDe(m.moneda)));
 const monLbl = id => MON(id).simbolo;
 
@@ -884,6 +896,10 @@ function obligaciones(pid, mk){
   return S.plant.filter(p => recPer(p) && p.persona === pid && !(p.desde && mk < p.desde) && enMesP(p, mk) && !S.movs.some(m => m.plantilla === p.id && mesDe(m.fecha) === mk && (m.estado === 'pagado' || m.estado === 'omitido' || m.sh))) // m.sh: la otra persona ya lo marcó como pagado
     .map(p => ({p, v: (p.tipo === 'ingreso' ? 1 : -1) * (p.monto || 0) * tasaDe(p.moneda)}));
 }
+function balanceMesMon(pid, mk){ mk = mk || hoyMes(); const t = {};
+  for (const m of S.movs){ const v = enMesPer(m, pid, mk); if (Math.abs(v) >= 0.005) sumMon(t, m.moneda, natDe(m, v)); }
+  for (const o of obligaciones(pid, mk)) sumMon(t, o.p.moneda, (o.p.tipo === 'ingreso' ? 1 : -1) * (o.p.monto || 0));
+  return t; }
 const balanceMes = (pid, mk) => { mk = mk || hoyMes(); return balancePersona(pid, mk) - balancePersona(pid, addMes(mk, -1)) + obligaciones(pid, mk).reduce((a, o) => a + o.v, 0); };
 // En Pendientes del mes: lo que le debés a cada persona hasta ese mes (tu parte de lo que pagó, cuotas incluidas)
 function pendientesPersonas(mk, list){ if (mk < hoyMes()) return list; for (const x of PERS()){ const b = balancePersona(x.id, mk) - balancePersona(x.id, addMes(mk, -1)); if (b <= -1) list.push({kind:'per', persona:x.id, monto:Math.round(-b), uyu:-b}); else if (b >= 1) list.push({kind:'cob', persona:x.id, monto:Math.round(b), uyu:b}); } return list; }
@@ -2143,6 +2159,8 @@ function vInicio(){
   const tipoDe = p => p.kind === 'est' ? 'pago' : p.kind === 'per' ? 'gasto' : p.kind === 'cob' ? 'ingreso' : (p.m || p.p).tipo;
   pend.sort((a,b) => (orden[tipoDe(a)]??2) - (orden[tipoDe(b)]??2));
   const porPagar = pend.reduce((a,p) => a + (tipoDe(p)==='ingreso' || tipoDe(p)==='mover' ? 0 : p.uyu), 0);
+  const porPagarMon = txtMon(pend.reduce((t, p) => { if (tipoDe(p) === 'ingreso' || tipoDe(p) === 'mover') return t;
+    if (p.kind === 'est') return sumMon(t, p.mon, p.monto); if (p.kind === 'mov') return sumMon(t, p.m.moneda, natDe(p.m, p.uyu)); if (p.p) return sumMon(t, p.p.moneda, natDe(p.p, p.uyu)); return sumMon(t, null, p.uyu); }, {}));
   const porTarjeta = {};
   const tj = k => porTarjeta[k] || (porTarjeta[k] = {compras:0, cuotas:0});
   for (const x of itemsDelMes(mk)) if (isCard(x.m)){ const t = tj(x.m.tarjeta); t.cuotas += x.uyu; t.compras += x.pl ? (x.m.total ?? x.m.monto) * (x.m.tasa || 1) : toBase(x.m); }
@@ -2197,9 +2215,9 @@ function vInicio(){
       <div class="minibars">${tjCatsL.map(([id, v]) => `<div class="mb" data-act="ir" data-filtro="cat:${esc(id)}" title="Ver movimientos"><span>${esc(nomCat(id))}</span><i><b style="width:${(v / tjMax * 100).toFixed(1)}%;background:${colCat(id)}"></b></i><span class="num">${fmt(v)}</span></div>`).join('')}</div></details>` : ''}
     <p class="note" style="margin:8px 0 0">Gasto total: el valor completo de cada compra que tiene una cuota en este resumen. A pagar: la suma de las cuotas de este resumen.</p>
   </section>` : ''}
-  ${PERS().some(x => Math.abs(balanceMes(x.id, mk)) >= 1) ? `<section class="panel"><h2>Gastos compartidos</h2><div class="list">${PERS().map(x => { const b = balanceMes(x.id, mk); return Math.abs(b) < 1 ? '' : `<div class="row click" data-act="ir" data-filtro="persona:${x.id}"><div class="t">${b > 0 ? esc(x.nombre) + ' te debe' : 'Le debés a ' + esc(x.nombre)}</div><div class="m">en ${nombreMes(mk).toLowerCase()}</div><div class="a num ${b > 0 ? 'pos' : ''}">${fmt(Math.abs(b))}</div></div>`; }).join('')}</div></section>` : ''}
+  ${PERS().some(x => Math.abs(balanceMes(x.id, mk)) >= 1) ? `<section class="panel"><h2>Gastos compartidos</h2><div class="list">${PERS().map(x => { const b = balanceMes(x.id, mk); return Math.abs(b) < 1 ? '' : `<div class="row click" data-act="ir" data-filtro="persona:${x.id}"><div class="t">${b > 0 ? esc(x.nombre) + ' te debe' : 'Le debés a ' + esc(x.nombre)}</div><div class="m">${(d => d ? d + ' · ' : '')(txtMon(balanceMesMon(x.id, mk), b > 0 ? 1 : -1))}en ${nombreMes(mk).toLowerCase()}</div><div class="a num ${b > 0 ? 'pos' : ''}">${fmt(Math.abs(b))}</div></div>`; }).join('')}</div></section>` : ''}
   <div class="cols">
-    <section class="panel"><h2>Pendientes <span>${pend.length ? fmt(porPagar) + ' por pagar' : ''}</span></h2>
+    <section class="panel"><h2>Pendientes <span>${pend.length ? fmt(porPagar) + ' por pagar' : ''}</span></h2>${desMon(porPagarMon)}
       <div class="list">${pend.length ? pend.map(pRow).join('') : `<p class="empty">No queda nada pendiente este mes.${S.plant.length ? '' : ' Agregá tus gastos recurrentes en Ajustes y van a aparecer acá cada mes.'}</p>`}</div>
       ${(() => { const q = Object.keys(S.cfg.estQuitados || {}).filter(k => k.startsWith(mk + '|')).length; return q ? `<p class="note" style="margin:8px 0 0">${q === 1 ? 'Quitaste un pago estimado de tarjeta' : `Quitaste ${q} pagos estimados de tarjeta`} este mes. <button class="lnk" data-act="estvolver">Volver a mostrar</button></p>` : ''; })()}</section>
     <section class="panel"><h2>Movimientos <span><a href="#movimientos" style="color:var(--accent)">Ver todos</a></span></h2>
@@ -2323,6 +2341,8 @@ function vMovs(){
   const neto = x => { const m = x.m; if (isCard(m) && conTarjeta && m.tipo === 'gasto') return -x.uyu; if (isCard(m) || m.viatico) return 0; const r = {ing:0, gastos:0, pagos:0, ahorro:0, tarjeta:0, ingP:0, salP:0, ahoP:0, tarP:0, ext:0, extP:0, cats:{}}; sumar(r, m, x.uyu, false); return f === 'ahorros' ? r.ahorro : r.ing - r.gastos - r.pagos - r.ahorro + r.ext; }; // con Ahorros: cuánto entró neto a tus cuentas de ahorro
   const tot = items.reduce((a,x) => a + neto(x), 0);
   const totPend = pend.reduce((a,x) => a + x.uyu, 0);
+  const totMon = txtMon(items.reduce((t, x) => sumMon(t, x.m.moneda, natDe(x.m, neto(x))), {})), pendMon = txtMon(pend.reduce((t, x) => sumMon(t, x.m.moneda, natDe(x.m, x.uyu)), {}));
+  const balMon = pid ? txtMon(balanceMesMon(pid, mk), balP >= 0 ? 1 : -1) : '';
   const ch = (k, l) => `<button class="chip" data-act="filtro" data-f="${k}" aria-pressed="${k === 'todo' ? !fs.length : fs.includes(k)}">${esc(l)}</button>`;
   const visibles = ['todo','ingreso','salidas','mover','ahorros','rec','eventos','pago','gasto','tarjeta'].concat(CATS().map(c => 'cat:'+c.id), S.cfg.tarjetas.map(t => 'tarjeta:'+t.id), S.cfg.cuentas.map(c => 'cuenta:'+c.id), PERS().map(x => 'persona:'+x.id));
   const extraChip = fs.filter(k => !visibles.includes(k)).map(k => `<button class="chip" data-act="filtro" data-f="${esc(k)}" aria-pressed="true" aria-label="Quitar filtro ${esc(FILTRO_LBL(k))}">${esc(FILTRO_LBL(k))} ✕</button>`).join('');
@@ -2338,10 +2358,10 @@ function vMovs(){
     <span class="note">Cuentas</span><div class="chips fila">${S.cfg.cuentas.map(c => ch('cuenta:'+c.id, c.nombre)).join('')}</div>
     ${PERS().length ? `<span class="note">Personas</span><div class="chips fila">${PERS().map(x => ch('persona:'+x.id, x.nombre)).join('')}</div>` : ''}
   </div>
-  <div class="filters" style="align-items:center"><input class="inp" id="q" type="search" placeholder="Buscar concepto" value="${esc(S.q)}" aria-label="Buscar concepto">${pid ? '' : `<span class="note num resmovs">${items.length} registrados${pend.length ? ` · ${pend.length} pendientes` : ''} · neto ${fmt(tot)}</span>`}</div>
-  ${pid ? `<div class="chips" style="margin-bottom:12px;align-items:center"><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="recibi" data-v="${balP > 0 ? Math.round(balP) : ''}">${nomP} me pagó</button><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="pague" data-v="${balP < 0 ? Math.round(-balP) : ''}">Le pagué a ${nomP}</button><button class="btn" data-act="compartir" data-p-id="${pid}" aria-label="Compartir el resumen del mes con ${nomP}">Compartir</button><span class="netoper num ${balP >= 1 ? 'pos' : ''}">${Math.abs(balP) < 1 ? `Con ${nomP}: a mano` : balP > 0 ? `${nomP} te debe ${fmt(balP)}` : `Le debés ${fmt(-balP)}`}</span></div>` : ''}
-  ${pend.length ? `<section class="panel"><h2>Pendientes <span class="num">${fmt(totPend)}</span></h2>${tabla(pend)}</section>` : ''}
-  <section class="panel">${pend.length ? `<h2>Registrados${pid ? '' : ` <span class="num">neto ${fmt(tot)}</span>`}</h2>` : ''}
+  <div class="filters" style="align-items:center"><input class="inp" id="q" type="search" placeholder="Buscar concepto" value="${esc(S.q)}" aria-label="Buscar concepto">${pid ? '' : `<span class="note num resmovs">${items.length} registrados${pend.length ? ` · ${pend.length} pendientes` : ''} · neto ${totMon ? totMon + ' = ' : ''}${fmt(tot)}</span>`}</div>
+  ${pid ? `<div class="chips" style="margin-bottom:12px;align-items:center"><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="recibi" data-v="${balP > 0 ? Math.round(balP) : ''}">${nomP} me pagó</button><button class="btn" data-act="saldar" data-p-id="${pid}" data-dir="pague" data-v="${balP < 0 ? Math.round(-balP) : ''}">Le pagué a ${nomP}</button><button class="btn" data-act="compartir" data-p-id="${pid}" aria-label="Compartir el resumen del mes con ${nomP}">Compartir</button><span class="netoper num ${balP >= 1 ? 'pos' : ''}">${Math.abs(balP) < 1 ? `Con ${nomP}: a mano` : balP > 0 ? `${nomP} te debe ${balMon ? balMon + ' = ' : ''}${fmt(balP)}` : `Le debés ${balMon ? balMon + ' = ' : ''}${fmt(-balP)}`}</span></div>` : ''}
+  ${pend.length ? `<section class="panel"><h2>Pendientes <span class="num">${fmt(totPend)}</span></h2>${desMon(pendMon)}${tabla(pend)}</section>` : ''}
+  <section class="panel">${pend.length ? `<h2>Registrados${pid ? '' : ` <span class="num">neto ${fmt(tot)}</span>`}</h2>${pid ? '' : desMon(totMon)}` : ''}
     ${items.length ? tabla(items) : `<p class="empty">${pend.length ? 'Todavía no hay nada registrado con este filtro.' : 'No hay movimientos con este filtro.'}</p>`}
   </section>
   <p class="note">${pid ? `Al lado de los botones, lo que queda entre ustedes este mes: lo que ${nomP} te debe menos lo que le debés, incluidos los recurrentes con ${nomP} que todavía no marcaste. Cada mes se cierra solo.` : 'Tocá un pendiente para registrarlo con el monto real. Las compras con tarjeta aparecen en el mes en que se pagan, con una cuota por mes.'}</p>`;
@@ -2693,7 +2713,7 @@ function vAjustes(){
     <div class="filters" style="margin-top:10px"><div class="field" style="flex:1;min-width:0"><label for="s-fecha">Los saldos iniciales son al día</label><input class="inp" id="s-fecha" type="date" value="${esc(c.fechaSaldos || inicio()+'-01')}"></div><button class="btn primary" data-act="fechasaldos" style="align-self:flex-end">Guardar</button></div>
     <p class="note" style="margin:8px 0 0">Las del <strong>día a día</strong> (cuenta sueldo, efectivo…) son de donde salen tus gastos: con ellas se calcula lo que te queda a fin de mes. Las de <strong>ahorro</strong> forman tu capital. Cada cuenta puede tener varias monedas y su saldo inicial en cada una.</p></section>
   <section class="panel"><h2>Personas <span><button class="btn" data-act="pernew">Agregar</button></span></h2>
-    <div class="list">${PERS().length ? PERS().map(x => { const b = balanceMes(x.id); return `<div class="row click" data-act="peredit" data-id="${x.id}"><div class="t">${esc(x.nombre)}${x.link ? '<span class="pill est">compartido</span>' : ''}</div><div class="m">${Math.abs(b) < 1 ? 'están a mano' : b > 0 ? 'te debe' : 'le debés'}</div><div class="a num">${Math.abs(b) < 1 ? '' : fmt(Math.abs(b))}</div></div>`; }).join('') : '<p class="empty">Agregá a las personas con las que compartís gastos (tu pareja, amigos, compañeros de casa).</p>'}</div>
+    <div class="list">${PERS().length ? PERS().map(x => { const b = balanceMes(x.id); return `<div class="row click" data-act="peredit" data-id="${x.id}"><div class="t">${esc(x.nombre)}${x.link ? '<span class="pill est">compartido</span>' : ''}</div><div class="m">${Math.abs(b) < 1 ? 'están a mano' : (b > 0 ? 'te debe' : 'le debés') + (d => d ? ' ' + d : '')(txtMon(balanceMesMon(x.id), b > 0 ? 1 : -1))}</div><div class="a num">${Math.abs(b) < 1 ? '' : fmt(Math.abs(b))}</div></div>`; }).join('') : '<p class="empty">Agregá a las personas con las que compartís gastos (tu pareja, amigos, compañeros de casa).</p>'}</div>
     <p class="note" style="margin:8px 0 0">Al cargar un gasto podés marcarlo como dividido, elegir quién pagó y qué parte paga cada uno. En Movimientos → Personas ves cuánto te deben o les debés.</p></section>
   <section class="panel"><h2>Tarjetas de crédito <span><button class="btn" data-act="tjnew">Agregar</button></span></h2>
     <div class="list">${c.tarjetas.length ? c.tarjetas.map(t => `<div class="row click" data-act="tjedit" data-id="${t.id}"><div class="t">${esc(t.nombre)}</div><div class="m">Cierra el ${t.cierre || '–'} · vence el ${t.vence || '–'} · ${(t.monedas||[]).map(mo => esc(MON(mo).simbolo)).join(' y ')}</div><div class="a"><span class="ir" aria-hidden="true">›</span></div></div>`).join('') : '<p class="empty">No tenés tarjetas cargadas. Si no usás tarjeta de crédito, dejalo así.</p>'}</div>
@@ -2741,7 +2761,7 @@ function abrirAyuda(){
     <header><h3>Cómo funciona</h3><button type="button" class="iconbtn" data-act="close" aria-label="Cerrar">${chev('M6 6l12 12M18 6L6 18')}</button></header>
     <div class="help">
       <div><h4>1. Prepará la app (una sola vez)</h4><ol>
-        <li><strong>Monedas</strong>: la primera es la principal y todo se suma en ella. Agregá las otras que uses con su cotización.</li>
+        <li><strong>Monedas</strong>: la primera es la principal y todo se suma en ella. Agregá las otras que uses con su cotización. Cuando un total mezcla monedas (lo que te debe una persona, los pendientes, el neto de Movimientos), abajo o al lado aparece cuánto es en cada moneda, y el total sigue en la principal.</li>
         <li><strong>Cuentas</strong>: renombrá las de ejemplo o creá las tuyas. Elegí si son del día a día o de ahorro, qué monedas tienen y cuánto tienen hoy.</li>
         <li><strong>Tarjetas</strong>: nombre, monedas, día de cierre, día de vencimiento y desde qué cuenta la pagás. Con el día de vencimiento, el pago del resumen también muestra el aviso cuando faltan 5 días o menos.</li>
         <li><strong>Gastos recurrentes</strong>: lo que se repite todos los meses (alquiler, servicios, sueldo, ahorro mensual). Si algo no se cobra todos los meses, en <em>Meses</em> tocá los meses en que va, o <em>Mes por medio</em>. Con <em>Vence el día</em>, cuando falten 5 días o menos y todavía esté pendiente, aparece un aviso chiquito (“vence en 3 días”, “vence hoy”, “venció”).</li>
