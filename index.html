@@ -2238,7 +2238,7 @@ function pasaFiltro(m, f){
   if (f.startsWith('cat:')) return m.tipo === 'gasto' && m.cat === f.slice(4); // también lo de tarjeta, en el mes en que se paga
   if (f === 'salidas') return m.tipo === 'gasto' || m.tipo === 'pago'; // también las compras con tarjeta (se listan en el mes en que se pagan; el neto no las suma dos veces)
   if (f === 'pend') return m.estado === 'pend';
-  if (f === 'ahorros'){ const aho = id => !!id && !!CTA(id) && !esDia(id); return m.tipo === 'mover' ? aho(m.de) || aho(m.a) : m.tipo === 'ingreso' && aho(m.cuenta); } // depósitos, retiros e ingresos a tus cuentas de ahorro (los gastos pagados desde ahí no)
+  if (f === 'ahorros'){ const aho = id => !!id && !!CTA(id) && !esDia(id); return m.tipo === 'mover' ? aho(m.a) && !aho(m.de) : m.tipo === 'ingreso' && aho(m.cuenta); } // lo que entra a tus cuentas de ahorro (depósitos e ingresos). Los retiros a efectivo o al día a día son transferencias: se ven en Transferencias
   if (f === 'rec') return esRec(m) || m.virtual === 'plant' && m.tipo === 'gasto';
   return m.tipo === f;
 }
@@ -2800,7 +2800,7 @@ function abrirAyuda(){
         <li>Cuando pagás la factura, usá <em>Pagar tarjeta</em> (o el pendiente estimado). Podés hacer pagos parciales o adelantos.</li></ul></div>
       <div><h4>Pantallas</h4><ul>
         <li><strong>Mes</strong>: cómo venís este mes, por categoría, tarjetas y pendientes.</li>
-        <li><strong>Movimientos</strong>: todo lo del mes, con filtros por tipo, categoría, tarjeta, cuenta y persona. Se combinan, uno por fila (por ejemplo, Alimentación + OCA); si tocás uno que no combina, el otro se quita solo. <em>Ahorros</em> muestra lo que entra y sale de tus cuentas de ahorro.</li>
+        <li><strong>Movimientos</strong>: todo lo del mes, con filtros por tipo, categoría, tarjeta, cuenta y persona. Se combinan, uno por fila (por ejemplo, Alimentación + OCA); si tocás uno que no combina, el otro se quita solo. <em>Ahorros</em> muestra lo que entra a tus cuentas de ahorro (depósitos e ingresos). Un retiro de una cuenta de ahorro a efectivo o al día a día es una transferencia: aparece en <em>Transferencias</em>.</li>
         <li><strong>Cuentas</strong>: el saldo de cada cuenta en cada moneda y tu capital ahorrado.</li>
         <li><strong>Análisis</strong>: gráficas mes a mes, tasa de ahorro y en qué se va la plata. Tocá una categoría (en la referencia o en la lista) para verla sola en la gráfica; tocala de nuevo o <em>Ver todas</em> para volver. Abajo, <em>Inversiones</em> muestra cuánto llevás invertido en cada categoría.</li></ul></div>
       <div><h4>Viajes y salidas</h4><ul>
